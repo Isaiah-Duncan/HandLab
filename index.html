@@ -444,6 +444,20 @@
         <label><span>Smoothing</span><span id="smoothVal">0.55</span></label>
         <input type="range" id="smoothSlider" min="0" max="0.85" step="0.02" value="0.55">
       </div>
+
+      <h3>Bracelet</h3>
+      <div style="display:flex;gap:8px;margin-bottom:10px;">
+        <button class="settings-btn active" id="btnToggleBracelet">✓ Bracelet ON</button>
+        <button class="settings-btn" id="btnBraceletReset">Reset</button>
+      </div>
+      <div class="settings-slider">
+        <label><span>Bracelet Size</span><span id="braceletScaleVal">1.00</span></label>
+        <input type="range" id="braceletScale" min="0.70" max="1.40" step="0.01" value="1.00">
+      </div>
+      <div class="settings-slider">
+        <label><span>Bracelet Lift (px)</span><span id="braceletLiftVal">0</span></label>
+        <input type="range" id="braceletLift" min="-40" max="60" step="1" value="0">
+      </div>
     </div>
   </div>
 
@@ -479,6 +493,9 @@
       smooth: 0.55,
       startTime: null,
       frameCount: 0,
+      braceletEnabled: true,
+      braceletScale: 1.0,
+      braceletLift: 0.0,
     };
 
     // Finger zone tracking
@@ -575,6 +592,168 @@
         x: offsetX + mirroredX * videoW * scale,
         y: offsetY + p.y * videoH * scale
       };
+    }
+
+    // ============================================
+    // VECTOR UTILITIES (Bracelet)
+    // ============================================
+    function vsub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
+    function vadd(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
+    function vmul(a, s) { return { x: a.x * s, y: a.y * s }; }
+    function vlen(a) { return Math.hypot(a.x, a.y) || 1; }
+    function vnorm(a) { const L = vlen(a); return { x: a.x / L, y: a.y / L }; }
+    function vdot(a, b) { return a.x * b.x + a.y * b.y; }
+    function vperp(a) { return { x: -a.y, y: a.x }; }
+
+    // ============================================
+    // BRACELET: 3D ILLUSION WRAPPED AROUND WRIST
+    // ============================================
+    function drawBracelet(lm) {
+      if (!state.braceletEnabled) return;
+
+      const wrist = toPx(lm[0]);
+      const thumbC = toPx(lm[1]);   // thumb CMC
+      const indexM = toPx(lm[5]);   // index MCP
+      const pinkyM = toPx(lm[17]);  // pinky MCP
+      const middleM = toPx(lm[9]);  // middle MCP
+
+      // Palm axis: wrist -> middle MCP (stable orientation)
+      const axis = vnorm(vsub(middleM, wrist)); // points toward fingers
+
+      // Wrist width direction across knuckles
+      const across = vnorm(vsub(pinkyM, indexM));
+      const normal = vnorm(vperp(across));
+
+      // Calculate hand width and base radius
+      const handWidth = Math.max(40, vlen(vsub(pinkyM, indexM)));
+      const baseR = handWidth * 0.42 * state.braceletScale;
+
+      // Bracelet center: near wrist, lifted along axis
+      const center = vadd(wrist, vmul(axis, (handWidth * 0.20) + state.braceletLift));
+
+      // Tilt estimation from z-depth (MediaPipe z is camera depth)
+      const zIndex = lm[5].z;
+      const zPinky = lm[17].z;
+      const zDiff = Math.max(-0.25, Math.min(0.25, zIndex - zPinky));
+      const tilt = Math.abs(zDiff) * 3.0; // 0..~0.75
+
+      // Ellipse radii: squash minor axis when wrist turns
+      const rx = baseR;
+      const ry = baseR * (0.55 + (0.35 * (1 - Math.min(1, tilt))));
+
+      // Rotation angle: align ellipse with across direction
+      const ang = Math.atan2(across.y, across.x);
+
+      // Determine front/back orientation
+      const palmCenter = {
+        x: (wrist.x + indexM.x + middleM.x + pinkyM.x) / 4,
+        y: (wrist.y + indexM.y + middleM.y + pinkyM.y) / 4
+      };
+      const thumbVec = vsub(thumbC, palmCenter);
+      const frontFlip = vdot(thumbVec, normal) >= 0 ? 1 : -1;
+
+      // Draw BACK arc (dim)
+      drawBraceletArc(center, rx, ry, ang, 0.15, frontFlip, false);
+
+      // Occlusion mask: hide back arc behind wrist
+      applyWristOcclusionMask(lm);
+
+      // Draw FRONT arc (bright + glow)
+      drawBraceletArc(center, rx, ry, ang, 0.9, frontFlip, true);
+
+      // Specular highlight
+      drawBraceletHighlight(center, rx, ry, ang, frontFlip, tilt);
+    }
+
+    function drawBraceletArc(c, rx, ry, ang, alpha, frontFlip, isFront) {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      ctx.strokeStyle = isFront ? 'rgba(230, 240, 255, 0.95)' : 'rgba(180, 200, 220, 0.55)';
+      ctx.lineWidth = isFront ? 10 : 8;
+      ctx.lineCap = 'round';
+
+      if (isFront) {
+        ctx.shadowColor = 'rgba(255,255,255,0.35)';
+        ctx.shadowBlur = 16;
+      } else {
+        ctx.shadowBlur = 0;
+      }
+
+      const start = frontFlip > 0 ? -0.15 * Math.PI : 0.85 * Math.PI;
+      const end = frontFlip > 0 ? 1.15 * Math.PI : 2.15 * Math.PI;
+
+      const backStart = start + Math.PI;
+      const backEnd = end + Math.PI;
+
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, rx, ry, ang, isFront ? start : backStart, isFront ? end : backEnd);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawBraceletHighlight(c, rx, ry, ang, frontFlip, tilt) {
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+
+      const shift = (frontFlip > 0 ? 1 : -1) * (0.18 + 0.22 * tilt);
+
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+      ctx.lineWidth = 4;
+      ctx.lineCap = 'round';
+      ctx.shadowColor = 'rgba(255,255,255,0.55)';
+      ctx.shadowBlur = 18;
+
+      const a0 = (-0.25 + shift) * Math.PI;
+      const a1 = (-0.05 + shift) * Math.PI;
+
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, rx * 0.92, ry * 0.92, ang, a0, a1);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function applyWristOcclusionMask(lm) {
+      const wrist = toPx(lm[0]);
+      const thumbC = toPx(lm[1]);
+      const indexM = toPx(lm[5]);
+      const middleM = toPx(lm[9]);
+      const ringM = toPx(lm[13]);
+      const pinkyM = toPx(lm[17]);
+
+      function expand(p, center, amt) {
+        const d = vsub(p, center);
+        const n = vnorm(d);
+        return vadd(p, vmul(n, amt));
+      }
+
+      const center = {
+        x: (wrist.x + indexM.x + middleM.x + ringM.x + pinkyM.x + thumbC.x) / 6,
+        y: (wrist.y + indexM.y + middleM.y + ringM.y + pinkyM.y + thumbC.y) / 6,
+      };
+
+      const amt = Math.max(10, vlen(vsub(pinkyM, indexM)) * 0.06);
+
+      const poly = [
+        expand(thumbC, center, amt),
+        expand(indexM, center, amt),
+        expand(middleM, center, amt),
+        expand(ringM, center, amt),
+        expand(pinkyM, center, amt),
+        expand(wrist, center, amt * 1.2),
+      ];
+
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.globalAlpha = 1.0;
+      ctx.beginPath();
+      ctx.moveTo(poly[0].x, poly[0].y);
+      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
     }
 
     // ============================================
@@ -1453,6 +1632,9 @@
       // 7. Draw skeleton with zone colors
       drawSkeleton(lm, fingerZoneData, thumbCrossing);
 
+      // 7b. Draw 3D bracelet around wrist
+      drawBracelet(lm);
+
       // 8. Draw numbered nodes with glow
       drawNodes(lm, fingerZoneData, thumbCrossing);
 
@@ -1558,6 +1740,42 @@
     document.getElementById('smoothSlider').oninput = function() {
       state.smooth = Number(this.value);
       document.getElementById('smoothVal').textContent = state.smooth.toFixed(2);
+    };
+
+    // Bracelet controls
+    const btnToggleBracelet = document.getElementById('btnToggleBracelet');
+    const btnBraceletReset = document.getElementById('btnBraceletReset');
+    const braceletScale = document.getElementById('braceletScale');
+    const braceletScaleVal = document.getElementById('braceletScaleVal');
+    const braceletLift = document.getElementById('braceletLift');
+    const braceletLiftVal = document.getElementById('braceletLiftVal');
+
+    braceletScaleVal.textContent = Number(braceletScale.value).toFixed(2);
+    braceletLiftVal.textContent = String(braceletLift.value);
+
+    btnToggleBracelet.onclick = () => {
+      state.braceletEnabled = !state.braceletEnabled;
+      btnToggleBracelet.textContent = `${state.braceletEnabled ? '✓' : ''} Bracelet ${state.braceletEnabled ? 'ON' : 'OFF'}`;
+      btnToggleBracelet.classList.toggle('active', state.braceletEnabled);
+    };
+
+    btnBraceletReset.onclick = () => {
+      state.braceletScale = 1.0;
+      state.braceletLift = 0;
+      braceletScale.value = '1.00';
+      braceletLift.value = '0';
+      braceletScaleVal.textContent = '1.00';
+      braceletLiftVal.textContent = '0';
+    };
+
+    braceletScale.oninput = (e) => {
+      state.braceletScale = Number(e.target.value);
+      braceletScaleVal.textContent = state.braceletScale.toFixed(2);
+    };
+
+    braceletLift.oninput = (e) => {
+      state.braceletLift = Number(e.target.value);
+      braceletLiftVal.textContent = String(state.braceletLift);
     };
 
     document.addEventListener('click', (e) => {
