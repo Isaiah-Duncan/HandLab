@@ -762,10 +762,10 @@
       const axisLen = Math.hypot(axisRaw.x, axisRaw.y) || 1;
       const axis = { x: axisRaw.x / axisLen, y: axisRaw.y / axisLen };
 
-      // Red line positioned between node 1 and node 2, closer to node 2 (70% toward node 2)
+      // Red line positioned 30% beyond node 2 (1.3 means 130% from node 1)
       const base = {
-        x: thumbCMC.x + (thumbMCP.x - thumbCMC.x) * 0.7,
-        y: thumbCMC.y + (thumbMCP.y - thumbCMC.y) * 0.7
+        x: thumbCMC.x + (thumbMCP.x - thumbCMC.x) * 1.3,
+        y: thumbCMC.y + (thumbMCP.y - thumbCMC.y) * 1.3
       };
 
       // Extend line endpoints along the palm axis
