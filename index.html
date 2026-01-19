@@ -630,44 +630,28 @@
       const pinkyPIP = toPx(lm[18]);
 
       ctx.save();
-      ctx.fillStyle = `rgba(34, 197, 94, ${alpha * 0.7})`;
+      ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
       ctx.beginPath();
 
-      // Start from wrist, go around the palm
+      // Start from wrist
       ctx.moveTo(wrist.x, wrist.y);
 
-      // Along thumb side
-      ctx.lineTo(thumbCMC.x, thumbCMC.y);
-      ctx.lineTo(thumbMCP.x, thumbMCP.y);
-
-      // Curve up to index MCP
-      ctx.quadraticCurveTo(
-        (thumbMCP.x + indexMCP.x) / 2, 
-        (thumbMCP.y + indexMCP.y) / 2 - 20,
-        indexMCP.x, indexMCP.y
-      );
-
-      // Follow MCP line across palm
-      ctx.lineTo(middleMCP.x, middleMCP.y);
-      ctx.lineTo(ringMCP.x, ringMCP.y);
+      // Go along the pinky side (wrist → pinkyMCP → pinkyPIP)
       ctx.lineTo(pinkyMCP.x, pinkyMCP.y);
-
-      // Up to pinky PIP (boundary)
       ctx.lineTo(pinkyPIP.x, pinkyPIP.y);
 
-      // Follow PIP boundary line back
+      // Follow the PIP boundary line (pinky → ring → middle → index)
       ctx.lineTo(ringPIP.x, ringPIP.y);
       ctx.lineTo(middlePIP.x, middlePIP.y);
       ctx.lineTo(indexPIP.x, indexPIP.y);
 
-      // Back down to index MCP
+      // Go down to indexMCP
       ctx.lineTo(indexMCP.x, indexMCP.y);
 
-      // Back to thumb area and wrist
-      ctx.quadraticCurveTo(
-        thumbMCP.x, thumbMCP.y,
-        wrist.x, wrist.y
-      );
+      // Along thumb side back to wrist
+      ctx.lineTo(thumbMCP.x, thumbMCP.y);
+      ctx.lineTo(thumbCMC.x, thumbCMC.y);
+      ctx.lineTo(wrist.x, wrist.y);
 
       ctx.closePath();
       ctx.fill();
@@ -787,13 +771,13 @@
         y: edge.x / edgeLen
       };
 
-      // Pick the normal that points toward the thumb
+      // Pick the normal that points AWAY from the thumb (for right hand, points LEFT)
       const thumbVec = {
         x: thumbMCP.x - palmCenter.x,
         y: thumbMCP.y - palmCenter.y
       };
       const dotTN = thumbVec.x * normal.x + thumbVec.y * normal.y;
-      if (dotTN < 0) {
+      if (dotTN > 0) {
         normal.x *= -1;
         normal.y *= -1;
       }
