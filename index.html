@@ -490,6 +490,8 @@
       pinky: { zone: 'safe', nodes: [] },
     };
 
+    let currentHandedness = 'Right'; // Default to right hand
+
     // ============================================
     // DOM ELEMENTS
     // ============================================
@@ -817,7 +819,7 @@
     // ============================================
     // THUMB CROSSING DETECTION
     // ============================================
-    function checkThumbCrossing(lm, redLine) {
+    function checkThumbCrossing(lm, redLine, handedness) {
       const crossingNodes = [];
 
       for (const nodeIdx of THUMB_NODES) {
@@ -829,10 +831,14 @@
           y: node.y - redLine.base.y
         };
 
-        // Dot product with normal (positive = past line toward thumb)
+        // Dot product with normal
         const dist = toNode.x * redLine.normal.x + toNode.y * redLine.normal.y;
 
-        if (dist > 0) {
+        // For Right hand: flash when dist > 0 (thumb crosses to the right side)
+        // For Left hand: flash when dist < 0 (thumb crosses to the left side)
+        const shouldFlash = handedness === 'Right' ? dist > 0 : dist < 0;
+
+        if (shouldFlash) {
           crossingNodes.push(nodeIdx);
         }
       }
@@ -1282,6 +1288,11 @@
         return;
       }
 
+      // Capture handedness (Right or Left)
+      if (results.multiHandedness && results.multiHandedness[0]) {
+        currentHandedness = results.multiHandedness[0].label;
+      }
+
       const lm = smoothLandmarks(hand);
 
       // 1. Draw safe zone blob (background)
@@ -1308,7 +1319,7 @@
 
       // 6. Detect zones
       const fingerZoneData = detectFingerZones(lm, pipPoints, dipPoints, tipPoints);
-      const thumbCrossing = checkThumbCrossing(lm, redLine);
+      const thumbCrossing = checkThumbCrossing(lm, redLine, currentHandedness);
 
       // 6b. Check exercise-specific finger states
       const fingerViolations = getFingerStateViolations(lm, state.mode);
