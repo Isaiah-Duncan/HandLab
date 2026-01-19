@@ -798,7 +798,7 @@
       if (!state.ibeEnabled) return;
 
       const wrist = toPx(lm[0]);
-      const { quality, angle } = getCameraPerspectiveQuality(lm);
+      const { quality } = getCameraPerspectiveQuality(lm);
 
       // Color based on quality
       const colors = {
@@ -807,46 +807,61 @@
         red: '#ef4444'
       };
 
-      const ringRadius = 35;
-      const ringWidth = 6;
-      const depth = 15; // 3D perspective depth
+      const ringColor = colors[quality];
+      const innerRadius = 20;
+      const outerRadius = 50;
+      const depthFront = 8;
+      const depthBack = 25;
 
       ctx.save();
 
-      // Draw back arc (faded, 3D depth)
-      ctx.strokeStyle = `rgba(255, 255, 255, 0.05)`;
-      ctx.lineWidth = ringWidth;
+      // Draw back (far) side of the ring - faded
+      ctx.fillStyle = `rgba(0, 0, 0, 0.3)`;
       ctx.beginPath();
-      ctx.ellipse(wrist.x, wrist.y + depth, ringRadius * 0.95, ringRadius * 0.5, 0, Math.PI, 0, false);
+      ctx.ellipse(wrist.x, wrist.y + depthBack, innerRadius * 0.8, innerRadius * 0.4, 0, 0, Math.PI, true);
+      ctx.ellipse(wrist.x, wrist.y + depthBack, outerRadius * 0.75, outerRadius * 0.35, 0, 0, Math.PI, false);
+      ctx.fill();
+
+      // Draw front (near) side of the ring - full color with gradient effect
+      ctx.fillStyle = ringColor;
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      // Outer arc (front, wider)
+      ctx.ellipse(wrist.x, wrist.y - depthFront, outerRadius, outerRadius * 0.7, 0, 0, Math.PI, false);
+      // Inner arc (front, narrower - reverse direction)
+      ctx.ellipse(wrist.x, wrist.y - depthFront, innerRadius, innerRadius * 0.6, 0, Math.PI, 0, true);
+      ctx.fill();
+
+      ctx.globalAlpha = 1.0;
+
+      // Draw side connectors (left and right)
+      ctx.strokeStyle = ringColor;
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath();
+      ctx.moveTo(wrist.x - outerRadius, wrist.y - depthFront);
+      ctx.quadraticCurveTo(wrist.x - outerRadius * 0.85, wrist.y + depthBack * 0.5, wrist.x - innerRadius * 0.8, wrist.y + depthBack);
       ctx.stroke();
 
-      // Draw front arc with quality color (visible part)
-      ctx.strokeStyle = colors[quality];
-      ctx.lineWidth = ringWidth;
-      ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.ellipse(wrist.x, wrist.y - depth, ringRadius, ringRadius * 0.6, 0, 0, Math.PI, false);
+      ctx.moveTo(wrist.x + outerRadius, wrist.y - depthFront);
+      ctx.quadraticCurveTo(wrist.x + outerRadius * 0.85, wrist.y + depthBack * 0.5, wrist.x + innerRadius * 0.8, wrist.y + depthBack);
       ctx.stroke();
 
-      // Draw side connectors for 3D effect
-      ctx.strokeStyle = `rgba(255, 255, 255, 0.15)`;
-      ctx.lineWidth = 1;
-      ctx.setLineDash([2, 2]);
-      const leftX = wrist.x - ringRadius;
-      const rightX = wrist.x + ringRadius;
+      ctx.globalAlpha = 1.0;
+
+      // Draw top inner rim highlight
+      ctx.strokeStyle = `rgba(255, 255, 255, 0.3)`;
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(leftX, wrist.y - depth);
-      ctx.lineTo(leftX, wrist.y + depth);
-      ctx.moveTo(rightX, wrist.y - depth);
-      ctx.lineTo(rightX, wrist.y + depth);
+      ctx.ellipse(wrist.x, wrist.y - depthFront, innerRadius, innerRadius * 0.6, 0, 0, Math.PI, false);
       ctx.stroke();
-      ctx.setLineDash([]);
 
       // Draw quality label below wrist
-      ctx.fillStyle = colors[quality];
-      ctx.font = 'bold 10px monospace';
+      ctx.fillStyle = ringColor;
+      ctx.font = 'bold 11px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(quality.toUpperCase(), wrist.x, wrist.y + ringRadius + 30);
+      ctx.fillText(quality.toUpperCase(), wrist.x, wrist.y + outerRadius + 35);
 
       ctx.restore();
     }
