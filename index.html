@@ -759,8 +759,15 @@
       const axisLen = Math.hypot(axisRaw.x, axisRaw.y) || 1;
       const axis = { x: axisRaw.x / axisLen, y: axisRaw.y / axisLen };
 
-      // Red line passes through thumbCMC (node 1)
-      const base = thumbCMC;
+      // Perpendicular direction for leftward offset (away from thumb)
+      const perpendicular = { x: -axis.y, y: axis.x };
+
+      // Red line base offset to the left by a few inches
+      const leftOffset = 80;  // Adjust this value to move left/right
+      const base = {
+        x: thumbCMC.x + perpendicular.x * leftOffset,
+        y: thumbCMC.y + perpendicular.y * leftOffset,
+      };
 
       // Extend line endpoints along the palm axis
       const extendBefore = 0.35 * handSize;
