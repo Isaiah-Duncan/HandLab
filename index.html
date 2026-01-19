@@ -408,7 +408,7 @@
         <button class="settings-btn" id="btnPause">⏸ Pause</button>
       </div>
       <div class="settings-row">
-        <button class="settings-btn active" id="btnIBE">🔍 IBE</button>
+        <button class="settings-btn active" id="btnIBE">🔍 IBE ON</button>
         <button class="settings-btn active" id="btnNodes">🔢 Nodes</button>
         <button class="settings-btn active" id="btnZones">🎨 Zones</button>
       </div>
@@ -421,7 +421,24 @@
         <option value="peace">Peace Sign (index+middle)</option>
         <option value="pinch_ti">Pinch: Thumb → Index</option>
         <option value="pinch_tp">Pinch: Thumb → Pinky</option>
+        <option value="thumbs_up">Thumbs Up (thumb only)</option>
+        <option value="middle_finger_lift">Middle Finger Lift (middle only)</option>
+        <option value="ring_finger_lift">Ring Finger Lift (ring only)</option>
+        <option value="pinky_out">Pinky Extension (pinky only)</option>
+        <option value="rock_on">Rock On (index+pinky)</option>
+        <option value="hang_loose">Hang Loose (thumb+pinky)</option>
+        <option value="four_fingers">Four Up (no thumb)</option>
+        <option value="ok_sign">OK Sign (thumb+index)</option>
+        <option value="thumb_to_middle">Thumb to Middle (thumb+middle)</option>
+        <option value="thumb_to_ring">Thumb to Ring (thumb+ring)</option>
+        <option value="thumb_to_pinky">Thumb to Pinky (thumb+pinky)</option>
+        <option value="flat_hand">Flat Hand (all fingers)</option>
+        <option value="fist">Gentle Fist (all down)</option>
+        <option value="starfish">Starfish Spread (all fingers)</option>
       </select>
+      <div class="settings-row">
+        <button class="settings-btn" id="btnSmartTest">Smart Test OFF</button>
+      </div>
 
       <h3>Legend</h3>
       <div class="legend">
@@ -429,34 +446,6 @@
         <div class="legend-item"><span class="legend-line blue"></span>DIP (OK)</div>
         <div class="legend-item"><span class="legend-line purple"></span>TIP (Low)</div>
         <div class="legend-item"><span class="legend-line red"></span>Thumb Line</div>
-      </div>
-
-      <h3>Adjustments</h3>
-      <div class="settings-slider">
-        <label><span>Zone Opacity</span><span id="opacityVal">0.30</span></label>
-        <input type="range" id="opacitySlider" min="0.1" max="0.6" step="0.02" value="0.30">
-      </div>
-      <div class="settings-slider">
-        <label><span>Red Line Offset</span><span id="redOffsetVal">80</span></label>
-        <input type="range" id="redOffsetSlider" min="40" max="150" step="5" value="80">
-      </div>
-      <div class="settings-slider">
-        <label><span>Smoothing</span><span id="smoothVal">0.55</span></label>
-        <input type="range" id="smoothSlider" min="0" max="0.85" step="0.02" value="0.55">
-      </div>
-
-      <h3>Bracelet</h3>
-      <div style="display:flex;gap:8px;margin-bottom:10px;">
-        <button class="settings-btn active" id="btnToggleBracelet">✓ Bracelet ON</button>
-        <button class="settings-btn" id="btnBraceletReset">Reset</button>
-      </div>
-      <div class="settings-slider">
-        <label><span>Bracelet Size</span><span id="braceletScaleVal">1.00</span></label>
-        <input type="range" id="braceletScale" min="0.70" max="1.40" step="0.01" value="1.00">
-      </div>
-      <div class="settings-slider">
-        <label><span>Bracelet Lift (px)</span><span id="braceletLiftVal">0</span></label>
-        <input type="range" id="braceletLift" min="-40" max="60" step="1" value="0">
       </div>
     </div>
   </div>
@@ -493,9 +482,8 @@
       smooth: 0.55,
       startTime: null,
       frameCount: 0,
-      braceletEnabled: true,
-      braceletScale: 1.0,
-      braceletLift: 0.0,
+      wristRingEnabled: true,
+      smartTestEnabled: false,
     };
 
     // Finger zone tracking
@@ -595,164 +583,90 @@
     }
 
     // ============================================
-    // VECTOR UTILITIES (Bracelet)
+    // WRIST TURN QUALITY RING
     // ============================================
-    function vsub(a, b) { return { x: a.x - b.x, y: a.y - b.y }; }
-    function vadd(a, b) { return { x: a.x + b.x, y: a.y + b.y }; }
-    function vmul(a, s) { return { x: a.x * s, y: a.y * s }; }
-    function vlen(a) { return Math.hypot(a.x, a.y) || 1; }
-    function vnorm(a) { const L = vlen(a); return { x: a.x / L, y: a.y / L }; }
-    function vdot(a, b) { return a.x * b.x + a.y * b.y; }
-    function vperp(a) { return { x: -a.y, y: a.x }; }
+    function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
-    // ============================================
-    // BRACELET: 3D ILLUSION WRAPPED AROUND WRIST
-    // ============================================
-    function drawBracelet(lm) {
-      if (!state.braceletEnabled) return;
-
-      const wrist = toPx(lm[0]);
-      const thumbC = toPx(lm[1]);   // thumb CMC
-      const indexM = toPx(lm[5]);   // index MCP
-      const pinkyM = toPx(lm[17]);  // pinky MCP
-      const middleM = toPx(lm[9]);  // middle MCP
-
-      // Palm axis: wrist -> middle MCP (stable orientation)
-      const axis = vnorm(vsub(middleM, wrist)); // points toward fingers
-
-      // Wrist width direction across knuckles
-      const across = vnorm(vsub(pinkyM, indexM));
-      const normal = vnorm(vperp(across));
-
-      // Calculate hand width and base radius
-      const handWidth = Math.max(40, vlen(vsub(pinkyM, indexM)));
-      const baseR = handWidth * 0.42 * state.braceletScale;
-
-      // Bracelet center: near wrist, lifted along axis
-      const center = vadd(wrist, vmul(axis, (handWidth * 0.20) + state.braceletLift));
-
-      // Tilt estimation from z-depth (MediaPipe z is camera depth)
+    function wristTurnQuality(lm) {
+      // Lower score = better (more front-facing)
       const zIndex = lm[5].z;
       const zPinky = lm[17].z;
-      const zDiff = Math.max(-0.25, Math.min(0.25, zIndex - zPinky));
-      const tilt = Math.abs(zDiff) * 3.0; // 0..~0.75
+      const zDiff = Math.abs(zIndex - zPinky); // 0..~0.3 typical
 
-      // Ellipse radii: squash minor axis when wrist turns
-      const rx = baseR;
-      const ry = baseR * (0.55 + (0.35 * (1 - Math.min(1, tilt))));
+      const p5 = toPx(lm[5]);
+      const p17 = toPx(lm[17]);
+      const handWidth = Math.max(1, Math.hypot(p17.x - p5.x, p17.y - p5.y));
 
-      // Rotation angle: align ellipse with across direction
-      const ang = Math.atan2(across.y, across.x);
+      // Normalize & scale (tune K if needed)
+      const K = 4.2;
+      const score = clamp01(zDiff * K);
 
-      // Determine front/back orientation
-      const palmCenter = {
-        x: (wrist.x + indexM.x + middleM.x + pinkyM.x) / 4,
-        y: (wrist.y + indexM.y + middleM.y + pinkyM.y) / 4
-      };
-      const thumbVec = vsub(thumbC, palmCenter);
-      const frontFlip = vdot(thumbVec, normal) >= 0 ? 1 : -1;
-
-      // Draw BACK arc (dim)
-      drawBraceletArc(center, rx, ry, ang, 0.15, frontFlip, false);
-
-      // Occlusion mask: hide back arc behind wrist
-      applyWristOcclusionMask(lm);
-
-      // Draw FRONT arc (bright + glow)
-      drawBraceletArc(center, rx, ry, ang, 0.9, frontFlip, true);
-
-      // Specular highlight
-      drawBraceletHighlight(center, rx, ry, ang, frontFlip, tilt);
+      // Convert to "quality" (1 = perfect)
+      return { score, quality: 1 - score, handWidth };
     }
 
-    function drawBraceletArc(c, rx, ry, ang, alpha, frontFlip, isFront) {
+    function colorForTurnScore(score) {
+      if (score < 0.25) return { stroke: 'rgba(34,197,94,0.95)', fill: 'rgba(34,197,94,0.18)', label: 'GOOD' };
+      if (score < 0.55) return { stroke: 'rgba(234,179,8,0.95)', fill: 'rgba(234,179,8,0.18)', label: 'OK' };
+      return { stroke: 'rgba(239,68,68,0.95)', fill: 'rgba(239,68,68,0.18)', label: 'BAD' };
+    }
+
+    function drawWristRing(lm) {
+      if (!state.wristRingEnabled) return;
+
+      const wrist = toPx(lm[0]);
+      const { score, handWidth } = wristTurnQuality(lm);
+      const c = colorForTurnScore(score);
+
+      // Ring size proportional to hand width
+      const r = Math.max(26, Math.min(60, handWidth * 0.28));
+
+      // Keep it subtle unless yellow/red
+      const loud = score >= 0.25;
+      const alpha = loud ? 1.0 : 0.55;
+
       ctx.save();
       ctx.globalAlpha = alpha;
 
-      ctx.strokeStyle = isFront ? 'rgba(230, 240, 255, 0.95)' : 'rgba(180, 200, 220, 0.55)';
-      ctx.lineWidth = isFront ? 10 : 8;
-      ctx.lineCap = 'round';
-
-      if (isFront) {
-        ctx.shadowColor = 'rgba(255,255,255,0.35)';
-        ctx.shadowBlur = 16;
-      } else {
-        ctx.shadowBlur = 0;
-      }
-
-      const start = frontFlip > 0 ? -0.15 * Math.PI : 0.85 * Math.PI;
-      const end = frontFlip > 0 ? 1.15 * Math.PI : 2.15 * Math.PI;
-
-      const backStart = start + Math.PI;
-      const backEnd = end + Math.PI;
-
+      // Background halo (very soft)
+      ctx.fillStyle = c.fill;
       ctx.beginPath();
-      ctx.ellipse(c.x, c.y, rx, ry, ang, isFront ? start : backStart, isFront ? end : backEnd);
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    function drawBraceletHighlight(c, rx, ry, ang, frontFlip, tilt) {
-      ctx.save();
-      ctx.globalAlpha = 0.55;
-
-      const shift = (frontFlip > 0 ? 1 : -1) * (0.18 + 0.22 * tilt);
-
-      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-      ctx.lineWidth = 4;
-      ctx.lineCap = 'round';
-      ctx.shadowColor = 'rgba(255,255,255,0.55)';
-      ctx.shadowBlur = 18;
-
-      const a0 = (-0.25 + shift) * Math.PI;
-      const a1 = (-0.05 + shift) * Math.PI;
-
-      ctx.beginPath();
-      ctx.ellipse(c.x, c.y, rx * 0.92, ry * 0.92, ang, a0, a1);
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    function applyWristOcclusionMask(lm) {
-      const wrist = toPx(lm[0]);
-      const thumbC = toPx(lm[1]);
-      const indexM = toPx(lm[5]);
-      const middleM = toPx(lm[9]);
-      const ringM = toPx(lm[13]);
-      const pinkyM = toPx(lm[17]);
-
-      function expand(p, center, amt) {
-        const d = vsub(p, center);
-        const n = vnorm(d);
-        return vadd(p, vmul(n, amt));
-      }
-
-      const center = {
-        x: (wrist.x + indexM.x + middleM.x + ringM.x + pinkyM.x + thumbC.x) / 6,
-        y: (wrist.y + indexM.y + middleM.y + ringM.y + pinkyM.y + thumbC.y) / 6,
-      };
-
-      const amt = Math.max(10, vlen(vsub(pinkyM, indexM)) * 0.06);
-
-      const poly = [
-        expand(thumbC, center, amt),
-        expand(indexM, center, amt),
-        expand(middleM, center, amt),
-        expand(ringM, center, amt),
-        expand(pinkyM, center, amt),
-        expand(wrist, center, amt * 1.2),
-      ];
-
-      ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.globalAlpha = 1.0;
-      ctx.beginPath();
-      ctx.moveTo(poly[0].x, poly[0].y);
-      for (let i = 1; i < poly.length; i++) ctx.lineTo(poly[i].x, poly[i].y);
-      ctx.closePath();
+      ctx.arc(wrist.x, wrist.y, r + 10, 0, Math.PI * 2);
       ctx.fill();
+
+      // Outer ring
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = c.stroke;
+      ctx.beginPath();
+      ctx.arc(wrist.x, wrist.y, r, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // "Degree" ticks (quiet)
+      ctx.globalAlpha *= 0.65;
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+      ctx.lineWidth = 2;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2;
+        const x1 = wrist.x + Math.cos(a) * (r + 3);
+        const y1 = wrist.y + Math.sin(a) * (r + 3);
+        const x2 = wrist.x + Math.cos(a) * (r + 10);
+        const y2 = wrist.y + Math.sin(a) * (r + 10);
+        ctx.beginPath();
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
+        ctx.stroke();
+      }
+
+      // Small label (only when not green)
+      if (score >= 0.25) {
+        ctx.globalAlpha = 0.95;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = '700 12px system-ui';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(c.label, wrist.x, wrist.y);
+      }
+
       ctx.restore();
     }
 
@@ -1172,6 +1086,46 @@
         case 'pinch_tp':
           // Pinch thumb to pinky: thumb+pinky UP, others DOWN
           return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
+        case 'thumbs_up':
+          // Thumb only extended
+          return { index: 'down', middle: 'down', ring: 'down', pinky: 'down', thumb: 'up' };
+        case 'middle_finger_lift':
+          // Middle only extended
+          return { index: 'down', middle: 'up', ring: 'down', pinky: 'down', thumb: 'down' };
+        case 'ring_finger_lift':
+          // Ring only extended
+          return { index: 'down', middle: 'down', ring: 'up', pinky: 'down', thumb: 'down' };
+        case 'pinky_out':
+          // Pinky only extended
+          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'down' };
+        case 'rock_on':
+          // Index+pinky up
+          return { index: 'up', middle: 'down', ring: 'down', pinky: 'up', thumb: 'down' };
+        case 'hang_loose':
+          // Thumb+pinky up
+          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
+        case 'four_fingers':
+          // All fingers up except thumb
+          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'down' };
+        case 'ok_sign':
+          // Thumb+index up
+          return { index: 'up', middle: 'down', ring: 'down', pinky: 'down', thumb: 'up' };
+        case 'thumb_to_middle':
+          // Thumb+middle up
+          return { index: 'down', middle: 'up', ring: 'down', pinky: 'down', thumb: 'up' };
+        case 'thumb_to_ring':
+          // Thumb+ring up
+          return { index: 'down', middle: 'down', ring: 'up', pinky: 'down', thumb: 'up' };
+        case 'thumb_to_pinky':
+          // Thumb+pinky up
+          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
+        case 'flat_hand':
+        case 'starfish':
+          // All fingers extended
+          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
+        case 'fist':
+          // All fingers down
+          return { index: 'down', middle: 'down', ring: 'down', pinky: 'down', thumb: 'down' };
         default:
           return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
       }
@@ -1627,13 +1581,13 @@
       const thumbCrossing = checkThumbCrossing(lm, redLine, currentHandedness);
 
       // 6b. Check exercise-specific finger states
-      const fingerViolations = getFingerStateViolations(lm, state.mode);
+      const fingerViolations = state.smartTestEnabled ? getFingerStateViolations(lm, state.mode) : null;
+
+      // 6c. Draw wrist ring quality indicator (behind skeleton)
+      drawWristRing(lm);
 
       // 7. Draw skeleton with zone colors
       drawSkeleton(lm, fingerZoneData, thumbCrossing);
-
-      // 7b. Draw 3D bracelet around wrist
-      drawBracelet(lm);
 
       // 8. Draw numbered nodes with glow
       drawNodes(lm, fingerZoneData, thumbCrossing);
@@ -1709,7 +1663,7 @@
 
     document.getElementById('btnIBE').onclick = function() {
       state.ibeEnabled = !state.ibeEnabled;
-      this.textContent = state.ibeEnabled ? '🔍 IBE' : '🔍 IBE';
+      this.textContent = state.ibeEnabled ? '🔍 IBE ON' : '🔍 IBE OFF';
       this.classList.toggle('active', state.ibeEnabled);
     };
 
@@ -1726,57 +1680,17 @@
     };
 
     document.getElementById('modeSelect').onchange = (e) => state.mode = e.target.value;
-
-    document.getElementById('opacitySlider').oninput = function() {
-      state.opacity = Number(this.value);
-      document.getElementById('opacityVal').textContent = state.opacity.toFixed(2);
+    document.getElementById('btnSmartTest').onclick = function() {
+      state.smartTestEnabled = !state.smartTestEnabled;
+      this.textContent = state.smartTestEnabled ? 'Smart Test ON' : 'Smart Test OFF';
+      this.classList.toggle('active', state.smartTestEnabled);
     };
 
-    document.getElementById('redOffsetSlider').oninput = function() {
-      state.redLineOffset = Number(this.value);
-      document.getElementById('redOffsetVal').textContent = state.redLineOffset;
-    };
-
-    document.getElementById('smoothSlider').oninput = function() {
-      state.smooth = Number(this.value);
-      document.getElementById('smoothVal').textContent = state.smooth.toFixed(2);
-    };
-
-    // Bracelet controls
-    const btnToggleBracelet = document.getElementById('btnToggleBracelet');
-    const btnBraceletReset = document.getElementById('btnBraceletReset');
-    const braceletScale = document.getElementById('braceletScale');
-    const braceletScaleVal = document.getElementById('braceletScaleVal');
-    const braceletLift = document.getElementById('braceletLift');
-    const braceletLiftVal = document.getElementById('braceletLiftVal');
-
-    braceletScaleVal.textContent = Number(braceletScale.value).toFixed(2);
-    braceletLiftVal.textContent = String(braceletLift.value);
-
-    btnToggleBracelet.onclick = () => {
-      state.braceletEnabled = !state.braceletEnabled;
-      btnToggleBracelet.textContent = `${state.braceletEnabled ? '✓' : ''} Bracelet ${state.braceletEnabled ? 'ON' : 'OFF'}`;
-      btnToggleBracelet.classList.toggle('active', state.braceletEnabled);
-    };
-
-    btnBraceletReset.onclick = () => {
-      state.braceletScale = 1.0;
-      state.braceletLift = 0;
-      braceletScale.value = '1.00';
-      braceletLift.value = '0';
-      braceletScaleVal.textContent = '1.00';
-      braceletLiftVal.textContent = '0';
-    };
-
-    braceletScale.oninput = (e) => {
-      state.braceletScale = Number(e.target.value);
-      braceletScaleVal.textContent = state.braceletScale.toFixed(2);
-    };
-
-    braceletLift.oninput = (e) => {
-      state.braceletLift = Number(e.target.value);
-      braceletLiftVal.textContent = String(state.braceletLift);
-    };
+    // Wrist ring toggle (optional, can be removed if UI is too crowded)
+    // Uncomment below to add a button, or just keep it auto-enabled
+    // document.getElementById('btnToggleWristRing').onclick = () => {
+    //   state.wristRingEnabled = !state.wristRingEnabled;
+    // };
 
     document.addEventListener('click', (e) => {
       if (!settingsDrawer.contains(e.target) && e.target !== settingsToggle) {
