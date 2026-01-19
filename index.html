@@ -1,36 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>HandHero – IBE Boundary Visualizer</title>
+  <title>HandHero – Dynamic IBE Boundary Visualizer</title>
   <style>
     /*
      * ============================================
-     * BOUNDARY ARCHITECTURE (CURVED, MODE-BASED)
+     * DYNAMIC BOUNDARY LINES (ALL FINGERS):
      * ============================================
-     * BOUNDARIES ARE SMOOTH CURVES, NOT STRAIGHT LINES
-     * Node selection adapts per exercise mode:
-     *
-     * GREEN boundary (MCP joints):
-     *   - open: all 5 fingers [4, 8, 12, 16, 20]
-     *   - scout: index+middle+ring [8, 12, 16]
-     *   - pointer: index only [8]
-     *   - pinch_ti: index+thumb [4, 8]
-     *   - pinch_tp: thumb+pinky [4, 20]
-     *
-     * BLUE boundary (PIP joints):
-     *   - Same mode-based selection as GREEN
-     *
-     * PURPLE boundary:
-     *   - Parallel offset below BLUE (by spacing px)
-     *
-     * RED THUMB LINE:
-     *   - Nodes 2 → 4 extended (Thumb MCP → TIP)
-     *   - Perpendicular offset from palm edge
-     *   - Dynamic offset: 0.06 to 0.25 of hand width
-     *
-     * See buildCurvePoints() for mode-to-nodes mapping
+     * GREEN line:  PIPs  → nodes 6, 10, 14, 18  (Index→Middle→Ring→Pinky PIP)
+     * BLUE line:   DIPs  → nodes 7, 11, 15, 19  (Index→Middle→Ring→Pinky DIP)
+     * PURPLE line: TIPs  → nodes 8, 12, 16, 20  (Index→Middle→Ring→Pinky TIP)
+     * RED line:    Fixed offset from hand (measures thumb crossing)
+     * GREEN zone:  Organic blob covering palm below boundaries
      * ============================================
      */
 
@@ -45,6 +28,7 @@
       --purple: #8b5cf6;
       --red: #ef4444;
       --orange: #f97316;
+      --yellow: #eab308;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -57,16 +41,12 @@
       overflow: hidden;
     }
 
-    /* ============================================
-       MAIN LAYOUT
-       ============================================ */
     .app {
       position: relative;
       width: 100%;
       height: 100%;
     }
 
-    /* Video is hidden - we draw to canvas */
     #video {
       position: absolute;
       opacity: 0;
@@ -94,43 +74,55 @@
       border: 1px solid var(--card-border);
       border-radius: 16px;
       padding: 16px 20px;
-      max-width: 320px;
+      max-width: 340px;
       z-index: 100;
     }
 
-    .instruction-card .icon {
-      font-size: 28px;
-      margin-bottom: 8px;
-    }
+    .instruction-card .icon { font-size: 28px; margin-bottom: 8px; }
+    .instruction-card .title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+    .instruction-card .subtitle { font-size: 13px; color: var(--text-muted); margin-bottom: 10px; }
 
-    .instruction-card .title {
-      font-size: 18px;
-      font-weight: 700;
-      margin-bottom: 4px;
-    }
-
-    .instruction-card .subtitle {
-      font-size: 13px;
-      color: var(--text-muted);
-      margin-bottom: 10px;
-    }
-
-    .instruction-card .step-indicator {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+    .zone-report {
+      background: rgba(0,0,0,0.3);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin-top: 10px;
       font-size: 11px;
-      font-weight: 600;
-      color: var(--green);
+      font-family: monospace;
+    }
+
+    .zone-report .header {
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
 
-    .instruction-card .step-indicator::before {
-      content: '';
+    .zone-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.05);
+    }
+
+    .zone-item:last-child { border-bottom: none; }
+
+    .zone-dot {
       width: 8px; height: 8px;
       border-radius: 50%;
-      background: var(--green);
+      flex-shrink: 0;
+    }
+
+    .zone-dot.green { background: var(--green); }
+    .zone-dot.blue { background: var(--blue); }
+    .zone-dot.purple { background: var(--purple); }
+    .zone-dot.red { background: var(--red); animation: pulse 0.5s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.3); }
     }
 
     /* ============================================
@@ -180,8 +172,8 @@
 
     .status-circle.green .inner { background: var(--green); }
     .status-circle.blue .inner { background: var(--blue); }
-    .status-circle.yellow .inner { background: var(--orange); }
-    .status-circle.red .inner { background: var(--red); }
+    .status-circle.purple .inner { background: var(--purple); }
+    .status-circle.red .inner { background: var(--red); animation: pulse 0.5s infinite; }
 
     .status-label {
       font-size: 11px;
@@ -216,40 +208,11 @@
     }
 
     .stat-tile .icon { font-size: 18px; }
-    .stat-tile .value {
-      font-size: 20px;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-    }
-    .stat-tile .label {
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
+    .stat-tile .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .stat-tile .label { font-size: 10px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; }
 
     /* ============================================
-       BOTTOM: Progress Bar
-       ============================================ */
-    .progress-bar {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background: rgba(255,255,255,0.1);
-    }
-
-    .progress-bar .fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--green), var(--blue));
-      transition: width 0.3s ease;
-    }
-
-    /* ============================================
-       SETTINGS DRAWER (Bottom-Right)
+       SETTINGS
        ============================================ */
     .settings-toggle {
       position: absolute;
@@ -271,10 +234,7 @@
       transition: all 0.2s ease;
     }
 
-    .settings-toggle:hover {
-      background: rgba(255,255,255,0.12);
-      transform: rotate(45deg);
-    }
+    .settings-toggle:hover { background: rgba(255,255,255,0.12); transform: rotate(45deg); }
 
     .settings-drawer {
       position: absolute;
@@ -295,9 +255,9 @@
     .settings-drawer.open { display: block; }
 
     .settings-drawer h3 {
-      font-size: 14px;
+      font-size: 12px;
       font-weight: 700;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 1px;
@@ -316,29 +276,22 @@
       border-radius: 10px;
       background: rgba(255,255,255,0.06);
       color: var(--text);
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       cursor: pointer;
       transition: all 0.2s ease;
     }
 
     .settings-btn:hover { background: rgba(255,255,255,0.12); }
-    .settings-btn.active {
-      background: var(--green);
-      border-color: var(--green);
-      color: #000;
-    }
+    .settings-btn.active { background: var(--green); border-color: var(--green); color: #000; }
 
-    .settings-slider {
-      margin-bottom: 14px;
-    }
-
+    .settings-slider { margin-bottom: 12px; }
     .settings-slider label {
       display: flex;
       justify-content: space-between;
-      font-size: 12px;
+      font-size: 11px;
       color: var(--text-muted);
-      margin-bottom: 6px;
+      margin-bottom: 4px;
     }
 
     .settings-slider input[type="range"] {
@@ -352,11 +305,10 @@
 
     .settings-slider input[type="range"]::-webkit-slider-thumb {
       appearance: none;
-      width: 16px;
-      height: 16px;
+      width: 14px;
+      height: 14px;
       border-radius: 50%;
       background: var(--text);
-      cursor: pointer;
     }
 
     select {
@@ -367,48 +319,34 @@
       background: rgba(255,255,255,0.06);
       color: var(--text);
       font-size: 12px;
-      margin-bottom: 12px;
-      cursor: pointer;
+      margin-bottom: 10px;
     }
 
-    .debug-info {
-      margin-top: 12px;
-      padding: 10px;
-      background: rgba(0,0,0,0.3);
-      border-radius: 8px;
-      font-size: 11px;
-      color: var(--text-muted);
-      font-family: monospace;
-    }
-
-    /* ============================================
-       LEGEND (in Settings)
-       ============================================ */
     .legend {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-bottom: 14px;
+      gap: 6px;
+      margin-bottom: 12px;
     }
 
     .legend-item {
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 11px;
+      gap: 5px;
+      font-size: 10px;
       color: var(--text-muted);
     }
 
-    .legend-dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
+    .legend-line {
+      width: 16px;
+      height: 3px;
+      border-radius: 2px;
     }
 
-    .legend-dot.green { background: var(--green); }
-    .legend-dot.blue { background: var(--blue); }
-    .legend-dot.purple { background: var(--purple); }
-    .legend-dot.red { background: var(--red); }
+    .legend-line.green { background: var(--green); }
+    .legend-line.blue { background: var(--blue); }
+    .legend-line.purple { background: var(--purple); }
+    .legend-line.red { background: var(--red); }
   </style>
 </head>
 <body>
@@ -418,10 +356,14 @@
 
     <!-- TOP-LEFT: Instruction Card -->
     <div class="instruction-card">
-      <div class="icon">🖖</div>
-      <div class="title" id="exerciseName">IBE Boundary Test</div>
-      <div class="subtitle" id="exerciseDesc">Visualizing invisible boundary logic</div>
-      <div class="step-indicator" id="stepIndicator">Show your hand to camera</div>
+      <div class="icon">🖐️</div>
+      <div class="title" id="exerciseName">Dynamic IBE Visualizer</div>
+      <div class="subtitle" id="exerciseDesc">Boundaries bend with your fingers</div>
+      
+      <div class="zone-report" id="zoneReport">
+        <div class="header">Finger Zone Report</div>
+        <div id="fingerZones">Waiting for hand...</div>
+      </div>
     </div>
 
     <!-- TOP-RIGHT: Status Widget -->
@@ -455,26 +397,20 @@
       </div>
     </div>
 
-    <!-- Progress Bar -->
-    <div class="progress-bar">
-      <div class="fill" id="progressFill"></div>
-    </div>
-
     <!-- Settings Toggle -->
     <button class="settings-toggle" id="settingsToggle">⚙️</button>
 
     <!-- Settings Drawer -->
     <div class="settings-drawer" id="settingsDrawer">
       <h3>Controls</h3>
-
       <div class="settings-row">
         <button class="settings-btn active" id="btnStart">▶ Start</button>
         <button class="settings-btn" id="btnPause">⏸ Pause</button>
       </div>
-
       <div class="settings-row">
-        <button class="settings-btn active" id="btnIBE">🔍 IBE: ON</button>
-        <button class="settings-btn active" id="btnNodes">🔢 Nodes: ON</button>
+        <button class="settings-btn active" id="btnIBE">🔍 IBE</button>
+        <button class="settings-btn active" id="btnNodes">🔢 Nodes</button>
+        <button class="settings-btn active" id="btnZones">🎨 Zones</button>
       </div>
 
       <h3>Test Mode</h3>
@@ -482,36 +418,32 @@
         <option value="open">Open Hand (all fingers)</option>
         <option value="scout">Scout Salute (index+middle+ring)</option>
         <option value="pointer">Pointer (index only)</option>
+        <option value="peace">Peace Sign (index+middle)</option>
         <option value="pinch_ti">Pinch: Thumb → Index</option>
         <option value="pinch_tp">Pinch: Thumb → Pinky</option>
       </select>
 
       <h3>Legend</h3>
       <div class="legend">
-        <div class="legend-item"><span class="legend-dot green"></span>Green (18→6)</div>
-        <div class="legend-item"><span class="legend-dot blue"></span>Blue (19→7)</div>
-        <div class="legend-item"><span class="legend-dot purple"></span>Purple (low)</div>
-        <div class="legend-item"><span class="legend-dot red"></span>Red (thumb)</div>
+        <div class="legend-item"><span class="legend-line green"></span>PIP (Safe)</div>
+        <div class="legend-item"><span class="legend-line blue"></span>DIP (OK)</div>
+        <div class="legend-item"><span class="legend-line purple"></span>TIP (Low)</div>
+        <div class="legend-item"><span class="legend-line red"></span>Thumb Line</div>
       </div>
 
       <h3>Adjustments</h3>
-
       <div class="settings-slider">
-        <label><span>Zone Opacity</span><span id="opacityVal">0.28</span></label>
-        <input type="range" id="opacitySlider" min="0.05" max="0.5" step="0.01" value="0.28">
+        <label><span>Zone Opacity</span><span id="opacityVal">0.30</span></label>
+        <input type="range" id="opacitySlider" min="0.1" max="0.6" step="0.02" value="0.30">
       </div>
-
       <div class="settings-slider">
-        <label><span>Boundary Spacing</span><span id="spacingVal">40</span></label>
-        <input type="range" id="spacingSlider" min="20" max="80" step="2" value="40">
+        <label><span>Red Line Offset</span><span id="redOffsetVal">80</span></label>
+        <input type="range" id="redOffsetSlider" min="40" max="150" step="5" value="80">
       </div>
-
       <div class="settings-slider">
-        <label><span>Smoothing</span><span id="smoothVal">0.60</span></label>
-        <input type="range" id="smoothSlider" min="0" max="0.90" step="0.02" value="0.60">
+        <label><span>Smoothing</span><span id="smoothVal">0.55</span></label>
+        <input type="range" id="smoothSlider" min="0" max="0.85" step="0.02" value="0.55">
       </div>
-
-      <div class="debug-info" id="debugInfo">Waiting for camera...</div>
     </div>
   </div>
 
@@ -522,12 +454,13 @@
   <script>
     /**
      * ============================================
-     * BOUNDARY NODE PAIRS (from wireframe)
+     * DYNAMIC BOUNDARY NODES (ALL FINGERS):
      * ============================================
-     * GREEN boundary:  nodes 18 → 6   (Pinky PIP → Index PIP)
-     * BLUE boundary:   nodes 19 → 7   (Pinky DIP → Index DIP)
-     * PURPLE boundary: Parallel offset below blue line
-     * RED thumb line:  nodes 2 → 4    (Thumb MCP → TIP, extended)
+     * GREEN (PIP):    6, 10, 14, 18  (Index→Pinky PIPs)
+     * BLUE (DIP):     7, 11, 15, 19  (Index→Pinky DIPs)
+     * PURPLE (TIP):   8, 12, 16, 20  (Index→Pinky TIPs)
+     * RED LINE:       Fixed offset from palm edge
+     * THUMB NODES:    1, 2, 3, 4     (CMC, MCP, IP, TIP)
      * ============================================
      */
 
@@ -539,13 +472,22 @@
       paused: false,
       ibeEnabled: true,
       nodesEnabled: true,
+      zonesEnabled: true,
       mode: 'open',
-      opacity: 0.28,
-      spacing: 40,
-      smooth: 0.60,
-      streak: 0,
-      done: 0,
+      opacity: 0.30,
+      redLineOffset: 80,
+      smooth: 0.55,
       startTime: null,
+      frameCount: 0,
+    };
+
+    // Finger zone tracking
+    const fingerZones = {
+      thumb: { zone: 'safe', alarm: false },
+      index: { zone: 'safe', nodes: [] },
+      middle: { zone: 'safe', nodes: [] },
+      ring: { zone: 'safe', nodes: [] },
+      pinky: { zone: 'safe', nodes: [] },
     };
 
     // ============================================
@@ -557,51 +499,47 @@
 
     const statusBadge = document.getElementById('statusBadge');
     const statusCircle = document.getElementById('statusCircle');
-    const stepIndicator = document.getElementById('stepIndicator');
-    const debugInfo = document.getElementById('debugInfo');
+    const fingerZonesEl = document.getElementById('fingerZones');
 
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsDrawer = document.getElementById('settingsDrawer');
 
-    const btnStart = document.getElementById('btnStart');
-    const btnPause = document.getElementById('btnPause');
-    const btnIBE = document.getElementById('btnIBE');
-    const btnNodes = document.getElementById('btnNodes');
-    const modeSelect = document.getElementById('modeSelect');
-
-    const opacitySlider = document.getElementById('opacitySlider');
-    const opacityVal = document.getElementById('opacityVal');
-    const spacingSlider = document.getElementById('spacingSlider');
-    const spacingVal = document.getElementById('spacingVal');
-    const smoothSlider = document.getElementById('smoothSlider');
-    const smoothVal = document.getElementById('smoothVal');
-
     // ============================================
-    // FINGER NODE DEFINITIONS
+    // NODE DEFINITIONS
     // ============================================
-    // MediaPipe Hand Landmarks:
-    // 0 = Wrist
-    // 1-4 = Thumb (CMC, MCP, IP, TIP)
-    // 5-8 = Index (MCP, PIP, DIP, TIP)
-    // 9-12 = Middle (MCP, PIP, DIP, TIP)
-    // 13-16 = Ring (MCP, PIP, DIP, TIP)
-    // 17-20 = Pinky (MCP, PIP, DIP, TIP)
+    const NODES = {
+      WRIST: 0,
+      THUMB: { CMC: 1, MCP: 2, IP: 3, TIP: 4 },
+      INDEX: { MCP: 5, PIP: 6, DIP: 7, TIP: 8 },
+      MIDDLE: { MCP: 9, PIP: 10, DIP: 11, TIP: 12 },
+      RING: { MCP: 13, PIP: 14, DIP: 15, TIP: 16 },
+      PINKY: { MCP: 17, PIP: 18, DIP: 19, TIP: 20 }
+    };
+
+    // Boundary line node groups (for curved lines across all fingers)
+    const BOUNDARY_NODES = {
+      PIP: [6, 10, 14, 18],   // Green line - PIPs
+      DIP: [7, 11, 15, 19],   // Blue line - DIPs
+      TIP: [8, 12, 16, 20],   // Purple line - TIPs
+      MCP: [5, 9, 13, 17],    // MCPs for safe zone
+    };
+
+    const THUMB_NODES = [1, 2, 3, 4];
 
     const CONNECTIONS = [
-      [0,1],[1,2],[2,3],[3,4],       // Thumb
-      [0,5],[5,6],[6,7],[7,8],       // Index
-      [0,9],[9,10],[10,11],[11,12],  // Middle
-      [0,13],[13,14],[14,15],[15,16],// Ring
-      [0,17],[17,18],[18,19],[19,20],// Pinky
-      [5,9],[9,13],[13,17]           // Palm
+      [0,1],[1,2],[2,3],[3,4],
+      [0,5],[5,6],[6,7],[7,8],
+      [0,9],[9,10],[10,11],[11,12],
+      [0,13],[13,14],[14,15],[15,16],
+      [0,17],[17,18],[18,19],[19,20],
+      [5,9],[9,13],[13,17]
     ];
 
-    const TIPS = [4, 8, 12, 16, 20];
-    const PIPS = [2, 6, 10, 14, 18];
-    const DIPS = [3, 7, 11, 15, 19];
+    const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+    const FINGER_TIPS = { thumb: 4, index: 8, middle: 12, ring: 16, pinky: 20 };
 
     // ============================================
-    // CANVAS SIZING & VIDEO MAPPING
+    // CANVAS & MAPPING
     // ============================================
     let canvasW = 0, canvasH = 0;
     let videoW = 0, videoH = 0;
@@ -620,32 +558,21 @@
       if (!video.videoWidth) return;
       videoW = video.videoWidth;
       videoH = video.videoHeight;
-
-      // Cover: scale to fill canvas, crop overflow
       const scaleX = canvasW / videoW;
       const scaleY = canvasH / videoH;
       scale = Math.max(scaleX, scaleY);
-
       const scaledW = videoW * scale;
       const scaledH = videoH * scale;
-
       offsetX = (canvasW - scaledW) / 2;
       offsetY = (canvasH - scaledH) / 2;
     }
 
-    /**
-     * Convert normalized landmark to canvas pixel coordinates
-     * Handles mirroring (selfie view) and cover aspect ratio
-     */
     function toPx(p) {
-      // Mirror X for selfie view
       const mirroredX = 1 - p.x;
-      
-      // Apply cover mapping
-      const x = offsetX + mirroredX * videoW * scale;
-      const y = offsetY + p.y * videoH * scale;
-      
-      return { x, y };
+      return {
+        x: offsetX + mirroredX * videoW * scale,
+        y: offsetY + p.y * videoH * scale
+      };
     }
 
     // ============================================
@@ -673,357 +600,700 @@
     // ============================================
     function drawVideo(image) {
       ctx.save();
-      
-      // Mirror the canvas context for selfie view
       ctx.translate(canvasW, 0);
       ctx.scale(-1, 1);
-      
-      // Draw with cover aspect ratio
-      ctx.drawImage(
-        image,
-        -offsetX, offsetY,  // Adjust for centering
-        videoW * scale, videoH * scale
-      );
-      
+      ctx.drawImage(image, -offsetX, offsetY, videoW * scale, videoH * scale);
       ctx.restore();
     }
 
     // ============================================
-    // DRAWING: SKELETON
+    // DRAWING: GREEN SAFE ZONE BLOB
     // ============================================
-    function drawSkeleton(lm) {
+    function drawSafeZoneBlob(lm) {
+      if (!state.zonesEnabled) return;
+
+      const alpha = state.opacity;
+
+      // Get key points to form the blob shape
+      const wrist = toPx(lm[0]);
+      const thumbCMC = toPx(lm[1]);
+      const thumbMCP = toPx(lm[2]);
+      const indexMCP = toPx(lm[5]);
+      const middleMCP = toPx(lm[9]);
+      const ringMCP = toPx(lm[13]);
+      const pinkyMCP = toPx(lm[17]);
+
+      // Get PIP line points (boundary)
+      const indexPIP = toPx(lm[6]);
+      const middlePIP = toPx(lm[10]);
+      const ringPIP = toPx(lm[14]);
+      const pinkyPIP = toPx(lm[18]);
+
+      ctx.save();
+      ctx.fillStyle = `rgba(34, 197, 94, ${alpha * 0.7})`;
+      ctx.beginPath();
+
+      // Start from wrist, go around the palm
+      ctx.moveTo(wrist.x, wrist.y);
+
+      // Along thumb side
+      ctx.lineTo(thumbCMC.x, thumbCMC.y);
+      ctx.lineTo(thumbMCP.x, thumbMCP.y);
+
+      // Curve up to index MCP
+      ctx.quadraticCurveTo(
+        (thumbMCP.x + indexMCP.x) / 2, 
+        (thumbMCP.y + indexMCP.y) / 2 - 20,
+        indexMCP.x, indexMCP.y
+      );
+
+      // Follow MCP line across palm
+      ctx.lineTo(middleMCP.x, middleMCP.y);
+      ctx.lineTo(ringMCP.x, ringMCP.y);
+      ctx.lineTo(pinkyMCP.x, pinkyMCP.y);
+
+      // Up to pinky PIP (boundary)
+      ctx.lineTo(pinkyPIP.x, pinkyPIP.y);
+
+      // Follow PIP boundary line back
+      ctx.lineTo(ringPIP.x, ringPIP.y);
+      ctx.lineTo(middlePIP.x, middlePIP.y);
+      ctx.lineTo(indexPIP.x, indexPIP.y);
+
+      // Back down to index MCP
+      ctx.lineTo(indexMCP.x, indexMCP.y);
+
+      // Back to thumb area and wrist
+      ctx.quadraticCurveTo(
+        thumbMCP.x, thumbMCP.y,
+        wrist.x, wrist.y
+      );
+
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ============================================
+    // DRAWING: CURVED BOUNDARY LINES
+    // ============================================
+    function drawCurvedBoundaryLine(lm, nodeIndices, color, lineWidth = 4) {
+      if (!state.ibeEnabled) return;
+
+      const points = nodeIndices.map(i => toPx(lm[i]));
+      if (points.length < 2) return;
+
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.lineWidth = lineWidth;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.setLineDash([10, 6]);
+
+      ctx.beginPath();
+
+      // Extend line beyond first point
+      const firstDir = {
+        x: points[0].x - points[1].x,
+        y: points[0].y - points[1].y
+      };
+      const firstLen = Math.hypot(firstDir.x, firstDir.y) || 1;
+      const extStart = {
+        x: points[0].x + (firstDir.x / firstLen) * 60,
+        y: points[0].y + (firstDir.y / firstLen) * 60
+      };
+
+      ctx.moveTo(extStart.x, extStart.y);
+      ctx.lineTo(points[0].x, points[0].y);
+
+      // Draw through all points with slight curve
+      for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
+      }
+
+      // Extend line beyond last point
+      const lastDir = {
+        x: points[points.length - 1].x - points[points.length - 2].x,
+        y: points[points.length - 1].y - points[points.length - 2].y
+      };
+      const lastLen = Math.hypot(lastDir.x, lastDir.y) || 1;
+      const extEnd = {
+        x: points[points.length - 1].x + (lastDir.x / lastLen) * 60,
+        y: points[points.length - 1].y + (lastDir.y / lastLen) * 60
+      };
+
+      ctx.lineTo(extEnd.x, extEnd.y);
+      ctx.stroke();
+
+      ctx.restore();
+
+      return points;
+    }
+
+    // ============================================
+    // DRAWING: ZONE FILLS BETWEEN BOUNDARIES
+    // ============================================
+    function drawZoneFill(topPoints, bottomPoints, color) {
+      if (!state.zonesEnabled || !topPoints || !bottomPoints) return;
+      if (topPoints.length < 2 || bottomPoints.length < 2) return;
+
+      ctx.save();
+      ctx.fillStyle = color;
+      ctx.beginPath();
+
+      // Top line (forward)
+      ctx.moveTo(topPoints[0].x, topPoints[0].y);
+      for (let i = 1; i < topPoints.length; i++) {
+        ctx.lineTo(topPoints[i].x, topPoints[i].y);
+      }
+
+      // Bottom line (backward)
+      for (let i = bottomPoints.length - 1; i >= 0; i--) {
+        ctx.lineTo(bottomPoints[i].x, bottomPoints[i].y);
+      }
+
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ============================================
+    // DRAWING: FIXED RED LINE (Thumb Measurement)
+    // ============================================
+    function getRedLine(lm) {
+      const wrist = toPx(lm[0]);
+      const indexMCP = toPx(lm[5]);
+      const middleMCP = toPx(lm[9]);
+      const ringMCP = toPx(lm[13]);
+      const pinkyMCP = toPx(lm[17]);
+      const thumbMCP = toPx(lm[2]);
+
+      // Compute palm center
+      const palmCenter = {
+        x: (wrist.x + indexMCP.x + middleMCP.x + ringMCP.x + pinkyMCP.x) / 5,
+        y: (wrist.y + indexMCP.y + middleMCP.y + ringMCP.y + pinkyMCP.y) / 5,
+      };
+
+      // Across-knuckles direction (pinky → index)
+      const edge = {
+        x: pinkyMCP.x - indexMCP.x,
+        y: pinkyMCP.y - indexMCP.y
+      };
+      const edgeLen = Math.hypot(edge.x, edge.y) || 1;
+
+      // Candidate normal (perpendicular to knuckle line)
+      let normal = {
+        x: -edge.y / edgeLen,
+        y: edge.x / edgeLen
+      };
+
+      // Pick the normal that points toward the thumb
+      const thumbVec = {
+        x: thumbMCP.x - palmCenter.x,
+        y: thumbMCP.y - palmCenter.y
+      };
+      const dotTN = thumbVec.x * normal.x + thumbVec.y * normal.y;
+      if (dotTN < 0) {
+        normal.x *= -1;
+        normal.y *= -1;
+      }
+
+      // Hand size estimate
+      const handSize = Math.max(60, Math.hypot(pinkyMCP.x - indexMCP.x, pinkyMCP.y - indexMCP.y));
+
+      // Palm axis direction (wrist → middle MCP)
+      const axisRaw = { x: middleMCP.x - wrist.x, y: middleMCP.y - wrist.y };
+      const axisLen = Math.hypot(axisRaw.x, axisRaw.y) || 1;
+      const axis = { x: axisRaw.x / axisLen, y: axisRaw.y / axisLen };
+
+      // Offset the base point
+      const offset = state.redLineOffset;
+      const base = {
+        x: palmCenter.x + normal.x * offset,
+        y: palmCenter.y + normal.y * offset,
+      };
+
+      // Extend line endpoints
+      const extendBefore = 0.35 * handSize;
+      const extendAfter = 1.25 * handSize;
+
+      const start = {
+        x: base.x - axis.x * extendBefore,
+        y: base.y - axis.y * extendBefore,
+      };
+
+      const end = {
+        x: base.x + axis.x * extendAfter,
+        y: base.y + axis.y * extendAfter,
+      };
+
+      // Return with normal and base for crossing detection
+      return { start, end, normal, base };
+    }
+
+    function drawRedLine(redLine) {
+      if (!state.ibeEnabled) return;
+
+      ctx.save();
+      ctx.strokeStyle = '#ef4444';
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.setLineDash([]);
+
+      ctx.beginPath();
+      ctx.moveTo(redLine.start.x, redLine.start.y);
+      ctx.lineTo(redLine.end.x, redLine.end.y);
+      ctx.stroke();
+
+      // Add glow effect
+      ctx.shadowColor = '#ef4444';
+      ctx.shadowBlur = 15;
+      ctx.strokeStyle = 'rgba(239, 68, 68, 0.5)';
+      ctx.lineWidth = 10;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    // ============================================
+    // THUMB CROSSING DETECTION
+    // ============================================
+    function checkThumbCrossing(lm, redLine) {
+      const crossingNodes = [];
+
+      for (const nodeIdx of THUMB_NODES) {
+        const node = toPx(lm[nodeIdx]);
+
+        // Calculate signed distance to red line using normal
+        const toNode = {
+          x: node.x - redLine.base.x,
+          y: node.y - redLine.base.y
+        };
+
+        // Dot product with normal (positive = past line toward thumb)
+        const dist = toNode.x * redLine.normal.x + toNode.y * redLine.normal.y;
+
+        if (dist > 0) {
+          crossingNodes.push(nodeIdx);
+        }
+      }
+
+      return crossingNodes;
+    }
+
+    // ============================================
+    // SMART EXERCISE LOGIC (UP vs DOWN fingers)
+    // ============================================
+    function getExpectedFingerStates(mode) {
+      // Returns { fingerName: 'up' | 'down' }
+      switch (mode) {
+        case 'open':
+          // All fingers extended
+          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
+        case 'scout':
+          // Scout salute: index+middle+ring UP, thumb+pinky DOWN
+          return { index: 'up', middle: 'up', ring: 'up', pinky: 'down', thumb: 'down' };
+        case 'pointer':
+          // Index only extended
+          return { index: 'up', middle: 'down', ring: 'down', pinky: 'down', thumb: 'down' };
+        case 'peace':
+          // Peace sign: index+middle UP
+          return { index: 'up', middle: 'up', ring: 'down', pinky: 'down', thumb: 'down' };
+        case 'pinch_ti':
+          // Pinch thumb to index: thumb+index UP, others DOWN
+          return { index: 'up', middle: 'down', ring: 'down', pinky: 'down', thumb: 'up' };
+        case 'pinch_tp':
+          // Pinch thumb to pinky: thumb+pinky UP, others DOWN
+          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
+        default:
+          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
+      }
+    }
+
+    function computeFingerExtension(lm, fingerName) {
+      // Returns true if finger is extended (above PIP), false if folded
+      const fingerMeta = {
+        index: { tip: 8, pip: 6, dip: 7 },
+        middle: { tip: 12, pip: 10, dip: 11 },
+        ring: { tip: 16, pip: 14, dip: 15 },
+        pinky: { tip: 20, pip: 18, dip: 19 },
+        thumb: { tip: 4, pip: 2, dip: 3 }
+      };
+
+      const meta = fingerMeta[fingerName];
+      if (!meta) return false;
+
+      const tipY = toPx(lm[meta.tip]).y;
+      const pipY = toPx(lm[meta.pip]).y;
+
+      // Extended if tip is significantly above PIP (margin ~12px)
+      return tipY < pipY - 12;
+    }
+
+    function getFingerStateViolations(lm, mode) {
+      // Returns { correct: [], wrong: [] } for current vs expected states
+      const expected = getExpectedFingerStates(mode);
+      const correct = [];
+      const wrong = [];
+
+      for (const fingerName of ['index', 'middle', 'ring', 'pinky', 'thumb']) {
+        const isExtended = computeFingerExtension(lm, fingerName);
+        const expectedState = expected[fingerName];
+        const actualState = isExtended ? 'up' : 'down';
+
+        if (actualState === expectedState) {
+          correct.push(fingerName);
+        } else {
+          wrong.push(`${fingerName} (is ${actualState}, need ${expectedState})`);
+        }
+      }
+
+      return { correct, wrong };
+    }
+
+    // ============================================
+    // FINGER ZONE DETECTION
+    // ============================================
+    function detectFingerZones(lm, pipPoints, dipPoints, tipPoints) {
+      const zones = {};
+
+      const fingers = [
+        { name: 'index', tip: 8, dip: 7, pip: 6, idx: 0 },
+        { name: 'middle', tip: 12, dip: 11, pip: 10, idx: 1 },
+        { name: 'ring', tip: 16, dip: 15, pip: 14, idx: 2 },
+        { name: 'pinky', tip: 20, dip: 19, pip: 18, idx: 3 },
+      ];
+
+      for (const finger of fingers) {
+        const tipPx = toPx(lm[finger.tip]);
+        const dipPx = toPx(lm[finger.dip]);
+        const pipPx = toPx(lm[finger.pip]);
+
+        // Get corresponding boundary points for this finger column
+        const pipBoundaryY = pipPoints[finger.idx]?.y || 0;
+        const dipBoundaryY = dipPoints[finger.idx]?.y || 0;
+        const tipBoundaryY = tipPoints[finger.idx]?.y || 0;
+
+        // Determine zone based on Y position (lower Y = higher on screen = extended)
+        // Check each node individually for zone crossing
+        let zone = 'safe';
+        let flash = 'none';  // Flash color: 'none', 'blue' (past green), 'red' (past blue)
+        const nodesInZone = [];
+        const crossingNodes = [];
+
+        // Check tip position against boundaries
+        // Past blue/DIP boundary = RED flash (low accuracy zone)
+        if (tipPx.y < dipBoundaryY) {
+          flash = 'red';
+          zone = 'purple';  // In low accuracy zone (past DIP)
+          crossingNodes.push(finger.tip);
+          nodesInZone.push(finger.tip, finger.dip, finger.pip);
+        }
+        // Past green/PIP boundary but not past blue = BLUE flash (entered safe zone)
+        else if (tipPx.y < pipBoundaryY) {
+          flash = 'blue';
+          zone = 'blue';  // In OK zone (past PIP but not past DIP)
+          crossingNodes.push(finger.tip);
+          nodesInZone.push(finger.tip, finger.dip, finger.pip);
+        }
+        // Below PIP boundary = safe zone (no flash)
+        else {
+          zone = 'safe';
+          nodesInZone.push(finger.pip, finger.dip, finger.tip);
+        }
+
+        // Also check if DIP node crosses boundaries
+        if (dipPx.y < dipBoundaryY) {
+          crossingNodes.push(finger.dip);
+          if (flash !== 'red') flash = 'red';
+        } else if (dipPx.y < pipBoundaryY) {
+          crossingNodes.push(finger.dip);
+          if (flash === 'none') flash = 'blue';
+        }
+
+        // Also check if PIP node crosses its boundary
+        if (pipPx.y < pipBoundaryY) {
+          crossingNodes.push(finger.pip);
+          if (flash === 'none') flash = 'blue';
+        }
+
+        zones[finger.name] = { zone, nodes: nodesInZone, crossingNodes, tipY: tipPx.y, flash };
+      }
+
+      return zones;
+    }
+
+    // ============================================
+    // DRAWING: SKELETON WITH ZONE GLOW
+    // ============================================
+    function drawSkeleton(lm, fingerZoneData, thumbCrossing) {
+      const zoneColors = {
+        green: '#22c55e',
+        blue: '#3b82f6',
+        purple: '#8b5cf6',
+        safe: '#40E0D0',
+      };
+
+      // Flash state for boundary crossing
+      const flashOn = Math.floor(state.frameCount / 6) % 2 === 0;
+
       // Draw connections
-      ctx.strokeStyle = '#40E0D0';
       ctx.lineWidth = 2.5;
       ctx.lineCap = 'round';
 
       for (const [i, j] of CONNECTIONS) {
         const a = toPx(lm[i]);
         const b = toPx(lm[j]);
-        ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
-        ctx.stroke();
+
+        // Determine color based on zone
+        let color = '#40E0D0';
+        let useGlow = false;
+
+        // Check if this is a thumb connection
+        if (THUMB_NODES.includes(i) || THUMB_NODES.includes(j)) {
+          if (thumbCrossing.includes(i) || thumbCrossing.includes(j)) {
+            color = flashOn ? '#ef4444' : '#7f1d1d';
+            useGlow = true;
+          }
+        } else {
+          // Check finger zones and apply flash colors for boundary crossings
+          for (const [fingerName, data] of Object.entries(fingerZoneData)) {
+            const fingerNodes = getFingerNodes(fingerName);
+            if (fingerNodes.includes(i) || fingerNodes.includes(j)) {
+              // Check if this segment has a crossing node
+              const hasCrossingNode = data.crossingNodes &&
+                (data.crossingNodes.includes(i) || data.crossingNodes.includes(j));
+
+              if (hasCrossingNode && data.flash !== 'none') {
+                // Apply flash colors for boundary crossing
+                if (data.flash === 'red') {
+                  // RED flash for low accuracy zone (past blue boundary)
+                  color = flashOn ? '#ef4444' : '#7f1d1d';
+                  useGlow = true;
+                } else if (data.flash === 'blue') {
+                  // BLUE flash for safe zone reached (past green boundary)
+                  color = flashOn ? '#3b82f6' : '#1e3a5f';
+                  useGlow = true;
+                }
+              } else {
+                color = zoneColors[data.zone] || color;
+              }
+            }
+          }
+        }
+
+        // Draw with glow if needed
+        if (useGlow && flashOn) {
+          ctx.save();
+          ctx.shadowColor = color;
+          ctx.shadowBlur = 10;
+          ctx.strokeStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          ctx.restore();
+        } else {
+          ctx.strokeStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+        }
       }
+    }
 
-      // Draw nodes
-      for (let i = 0; i < 21; i++) {
-        const p = toPx(lm[i]);
-        const isTip = TIPS.includes(i);
-        const radius = isTip ? 6 : 4;
-
-        ctx.fillStyle = isTip ? '#40E0D0' : '#40E0D0';
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, radius, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
+    function getFingerNodes(fingerName) {
+      switch (fingerName) {
+        case 'index': return [5, 6, 7, 8];
+        case 'middle': return [9, 10, 11, 12];
+        case 'ring': return [13, 14, 15, 16];
+        case 'pinky': return [17, 18, 19, 20];
+        default: return [];
       }
     }
 
     // ============================================
-    // DRAWING: NUMBERED NODES
+    // DRAWING: NODES WITH GLOW
     // ============================================
-    function drawNodeNumbers(lm) {
+    function drawNodes(lm, fingerZoneData, thumbCrossing) {
       if (!state.nodesEnabled) return;
 
-      ctx.font = 'bold 10px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
+      const zoneColors = {
+        green: '#22c55e',
+        blue: '#3b82f6',
+        purple: '#8b5cf6',
+        safe: '#40E0D0',
+      };
+
+      state.frameCount++;
+      const flashOn = Math.floor(state.frameCount / 6) % 2 === 0;
 
       for (let i = 0; i < 21; i++) {
         const p = toPx(lm[i]);
 
-        // Background circle
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        // Determine node color
+        let fillColor = 'rgba(0,0,0,0.8)';
+        let strokeColor = '#fff';
+        let glowColor = null;
+        let isAlarm = false;
+
+        // Check if thumb node crossing red line
+        if (THUMB_NODES.includes(i) && thumbCrossing.includes(i)) {
+          fillColor = flashOn ? '#ef4444' : '#7f1d1d';
+          strokeColor = '#ef4444';
+          glowColor = '#ef4444';
+          isAlarm = true;
+        } else {
+          // Check finger zones and apply boundary crossing flashes
+          for (const [fingerName, data] of Object.entries(fingerZoneData)) {
+            const fingerNodes = getFingerNodes(fingerName);
+            if (fingerNodes.includes(i)) {
+              // Check if this specific node is crossing a boundary
+              const isCrossingNode = data.crossingNodes && data.crossingNodes.includes(i);
+
+              if (isCrossingNode && data.flash !== 'none') {
+                // Apply flash colors for boundary crossings
+                if (data.flash === 'red') {
+                  // RED flash when past blue boundary (low accuracy zone)
+                  fillColor = flashOn ? '#ef4444' : '#7f1d1d';
+                  glowColor = '#ef4444';
+                  strokeColor = flashOn ? '#ef4444' : '#7f1d1d';
+                  isAlarm = true;
+                } else if (data.flash === 'blue') {
+                  // BLUE flash when past green boundary (safe zone reached)
+                  fillColor = flashOn ? '#3b82f6' : '#1e3a5f';
+                  glowColor = '#3b82f6';
+                  strokeColor = flashOn ? '#3b82f6' : '#1e3a5f';
+                }
+              } else if (data.zone !== 'safe') {
+                // Non-crossing nodes in active zone just get zone color
+                glowColor = zoneColors[data.zone];
+                strokeColor = glowColor;
+              }
+            }
+          }
+        }
+
+        // Draw glow
+        if (glowColor) {
+          ctx.save();
+          ctx.shadowColor = glowColor;
+          ctx.shadowBlur = isAlarm ? 20 : 12;
+          ctx.fillStyle = glowColor;
+          ctx.globalAlpha = flashOn ? 0.5 : 0.3;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+
+        // Draw node
+        ctx.fillStyle = fillColor;
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+        ctx.arc(p.x, p.y, 11, 0, Math.PI * 2);
         ctx.fill();
 
-        // Border
-        ctx.strokeStyle = '#fff';
-        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Number
+        // Draw number
         ctx.fillStyle = '#fff';
+        ctx.font = 'bold 9px Arial';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
         ctx.fillText(String(i), p.x, p.y);
       }
     }
 
     // ============================================
-    // DRAWING: BOUNDARY LINES & ZONES
+    // UI UPDATE: ZONE REPORT
     // ============================================
+    function updateZoneReport(fingerZoneData, thumbCrossing, fingerViolations) {
+      let html = '';
 
-    /**
-     * Get line from two node indices and extend it
-     */
-    function getExtendedLine(lm, nodeA, nodeB, extendPx = 150) {
-      const a = toPx(lm[nodeA]);
-      const b = toPx(lm[nodeB]);
+      // Show expected finger states for current mode
+      const expected = getExpectedFingerStates(state.mode);
+      const upFingers = Object.entries(expected).filter(([_, v]) => v === 'up').map(([k]) => k);
+      const downFingers = Object.entries(expected).filter(([_, v]) => v === 'down').map(([k]) => k);
 
-      // Direction vector
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len;
-      const uy = dy / len;
-
-      // Extend both ends
-      return {
-        a: { x: a.x - ux * extendPx, y: a.y - uy * extendPx },
-        b: { x: b.x + ux * extendPx, y: b.y + uy * extendPx },
-        ux, uy,
-        nx: -uy, // Normal (perpendicular)
-        ny: ux
-      };
-    }
-
-    /**
-     * Offset a line perpendicular by given pixels
-     */
-    function offsetLine(line, offsetPx) {
-      return {
-        a: { x: line.a.x + line.nx * offsetPx, y: line.a.y + line.ny * offsetPx },
-        b: { x: line.b.x + line.nx * offsetPx, y: line.b.y + line.ny * offsetPx },
-        ux: line.ux, uy: line.uy,
-        nx: line.nx, ny: line.ny
-      };
-    }
-
-    /**
-     * Draw a dashed line
-     */
-    function drawBoundaryLine(line, color, width = 4) {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = width;
-      ctx.lineCap = 'round';
-      ctx.setLineDash([8, 6]);
-
-      ctx.beginPath();
-      ctx.moveTo(line.a.x, line.a.y);
-      ctx.lineTo(line.b.x, line.b.y);
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    /**
-     * Fill zone between two lines
-     */
-    function fillZoneBetween(topLine, bottomLine, color) {
-      ctx.save();
-      ctx.fillStyle = color;
-
-      ctx.beginPath();
-      ctx.moveTo(topLine.a.x, topLine.a.y);
-      ctx.lineTo(topLine.b.x, topLine.b.y);
-      ctx.lineTo(bottomLine.b.x, bottomLine.b.y);
-      ctx.lineTo(bottomLine.a.x, bottomLine.a.y);
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.restore();
-    }
-
-    /**
-     * Draw RED thumb line (nodes 2 → 4 extended)
-     */
-    function drawThumbRedLine(lm) {
-      const mcp = toPx(lm[2]);  // Thumb MCP
-      const tip = toPx(lm[4]);  // Thumb TIP
-
-      // Direction from MCP to TIP
-      const dx = tip.x - mcp.x;
-      const dy = tip.y - mcp.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const ux = dx / len;
-      const uy = dy / len;
-
-      // Extend the line
-      const extendBefore = 60;
-      const extendAfter = 80;
-
-      const start = {
-        x: mcp.x - ux * extendBefore,
-        y: mcp.y - uy * extendBefore
-      };
-      const end = {
-        x: tip.x + ux * extendAfter,
-        y: tip.y + uy * extendAfter
-      };
-
-      // Draw solid red line
-      ctx.save();
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 5;
-      ctx.lineCap = 'round';
-
-      ctx.beginPath();
-      ctx.moveTo(start.x, start.y);
-      ctx.lineTo(end.x, end.y);
-      ctx.stroke();
-
-      ctx.restore();
-    }
-
-    /**
-     * Draw "0%" label in green zone
-     */
-    function drawZoneLabels(greenLine) {
-      const midX = (greenLine.a.x + greenLine.b.x) / 2;
-      const midY = (greenLine.a.y + greenLine.b.y) / 2;
-
-      // Position label above the green line
-      const labelX = midX + greenLine.nx * -40;
-      const labelY = midY + greenLine.ny * -40;
-
-      ctx.save();
-      ctx.font = 'bold 24px Arial';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
-      ctx.fillText('0%', labelX, labelY);
-      ctx.restore();
-    }
-
-    /**
-     * Draw complete IBE visualization
-     */
-    function drawIBEOverlay(lm) {
-      if (!state.ibeEnabled) return;
-
-      const alpha = state.opacity;
-      const spacing = state.spacing;
-
-      // Get boundary lines from SPECIFIC NODE PAIRS (wireframe spec)
-      // GREEN: nodes 18 → 6 (Pinky PIP → Index PIP)
-      const greenLine = getExtendedLine(lm, 18, 6, 200);
-
-      // BLUE: nodes 19 → 7 (Pinky DIP → Index DIP)
-      const blueLine = getExtendedLine(lm, 19, 7, 200);
-
-      // PURPLE: Parallel offset below blue
-      // Calculate offset direction (perpendicular, pointing "down" toward palm)
-      const purpleLine = offsetLine(blueLine, spacing);
-
-      // === DRAW ZONES ===
-      // Green zone: above green line (we draw a band upward)
-      const greenTop = offsetLine(greenLine, -spacing * 1.5);
-      fillZoneBetween(greenTop, greenLine, `rgba(34, 197, 94, ${alpha})`);
-
-      // Blue zone: between green and blue
-      fillZoneBetween(greenLine, blueLine, `rgba(59, 130, 246, ${alpha * 0.9})`);
-
-      // Purple/Low zone: between blue and purple
-      fillZoneBetween(blueLine, purpleLine, `rgba(139, 92, 246, ${alpha * 0.8})`);
-
-      // === DRAW BOUNDARY LINES ===
-      drawBoundaryLine(greenLine, '#22c55e', 4);
-      drawBoundaryLine(blueLine, '#3b82f6', 4);
-      drawBoundaryLine(purpleLine, '#8b5cf6', 4);
-
-      // === DRAW RED THUMB LINE ===
-      drawThumbRedLine(lm);
-
-      // === DRAW ZONE LABEL ===
-      drawZoneLabels(greenLine);
-
-      return { greenLine, blueLine, purpleLine };
-    }
-
-    // ============================================
-    // ZONE EVALUATION
-    // ============================================
-    function evaluateZone(lm, boundaries) {
-      if (!boundaries) return 'UNKNOWN';
-
-      const { greenLine, blueLine, purpleLine } = boundaries;
-
-      // Get non-target fingertips based on mode
-      const nonTargets = getNonTargetTips();
-
-      // Calculate signed distance of non-target tips to green line
-      let totalDist = 0;
-      for (const tipIdx of nonTargets) {
-        const tip = toPx(lm[tipIdx]);
-        const dist = signedDistToLine(tip, greenLine);
-        totalDist += dist;
+      html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
+        <span>Expected UP: ${upFingers.length > 0 ? upFingers.join(', ') : 'none'}</span>
+      </div>`;
+      if (downFingers.length > 0) {
+        html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
+          <span>Expected DOWN: ${downFingers.join(', ')}</span>
+        </div>`;
       }
 
-      const avgDist = nonTargets.length > 0 ? totalDist / nonTargets.length : 0;
+      // Thumb status
+      const thumbStatus = thumbCrossing.length > 0 ? 'CROSSING' : 'OK';
+      const thumbClass = thumbCrossing.length > 0 ? 'red' : 'green';
+      html += `<div class="zone-item">
+        <span class="zone-dot ${thumbClass}"></span>
+        <span>Thumb: ${thumbStatus} ${thumbCrossing.length > 0 ? `(nodes: ${thumbCrossing.join(',')})` : ''}</span>
+      </div>`;
 
-      // Determine zone based on average distance
-      if (avgDist < 0) return 'SAFE';
-      if (avgDist < state.spacing * 0.8) return 'ACCEPTABLE';
-      if (avgDist < state.spacing * 1.8) return 'LOW';
-      return 'VIOLATION';
-    }
-
-    function signedDistToLine(point, line) {
-      const dx = line.b.x - line.a.x;
-      const dy = line.b.y - line.a.y;
-      const num = (point.x - line.a.x) * dy - (point.y - line.a.y) * dx;
-      const den = Math.hypot(dx, dy) || 1;
-      return num / den;
-    }
-
-    function getNonTargetTips() {
-      const allTips = [4, 8, 12, 16, 20];
-      let targets = [];
-
-      switch (state.mode) {
-        case 'open':
-          targets = [4, 8, 12, 16, 20];
-          break;
-        case 'scout':
-          targets = [8, 12, 16];
-          break;
-        case 'pointer':
-          targets = [8];
-          break;
-        case 'pinch_ti':
-          targets = [4, 8];
-          break;
-        case 'pinch_tp':
-          targets = [4, 20];
-          break;
+      // Other fingers
+      for (const [name, data] of Object.entries(fingerZoneData)) {
+        const dotClass = data.zone === 'safe' ? 'green' : data.zone;
+        const flashIndicator = data.flash !== 'none' ? ` [${data.flash.toUpperCase()} FLASH]` : '';
+        const crossingText = data.crossingNodes && data.crossingNodes.length > 0
+          ? ` (crossing: ${data.crossingNodes.join(',')})`
+          : '';
+        html += `<div class="zone-item">
+          <span class="zone-dot ${dotClass}"></span>
+          <span>${name.charAt(0).toUpperCase() + name.slice(1)}: ${data.zone.toUpperCase()}${crossingText}${flashIndicator}</span>
+        </div>`;
       }
 
-      return allTips.filter(t => !targets.includes(t));
+      // Smart exercise logic report
+      if (fingerViolations) {
+        if (fingerViolations.wrong.length === 0) {
+          html += `<div class="zone-item" style="color:var(--green);font-weight:700">
+            <span class="zone-dot green"></span>
+            <span>✓ Exercise pose correct</span>
+          </div>`;
+        } else {
+          html += `<div class="zone-item" style="color:var(--orange);font-weight:700">
+            <span class="zone-dot" style="background:var(--orange)"></span>
+            <span>⚠ Violations: ${fingerViolations.wrong.join(', ')}</span>
+          </div>`;
+        }
+      }
+
+      fingerZonesEl.innerHTML = html;
     }
 
-    // ============================================
-    // UPDATE UI
-    // ============================================
-    function updateStatus(zone) {
+    function updateStatus(fingerZoneData, thumbCrossing) {
       statusCircle.className = 'status-circle';
 
-      switch (zone) {
-        case 'SAFE':
-          statusCircle.classList.add('green');
-          statusBadge.textContent = 'SAFE';
-          break;
-        case 'ACCEPTABLE':
-          statusCircle.classList.add('blue');
-          statusBadge.textContent = 'OK';
-          break;
-        case 'LOW':
-          statusCircle.classList.add('yellow');
-          statusBadge.textContent = 'LOW';
-          break;
-        case 'VIOLATION':
-          statusCircle.classList.add('red');
-          statusBadge.textContent = 'FAIL';
-          break;
-        default:
-          statusBadge.textContent = 'IDLE';
+      // Determine overall status
+      const hasThumbAlarm = thumbCrossing.length > 0;
+      const zones = Object.values(fingerZoneData).map(d => d.zone);
+
+      if (hasThumbAlarm) {
+        statusCircle.classList.add('red');
+        statusBadge.textContent = 'ALARM';
+      } else if (zones.includes('purple')) {
+        statusCircle.classList.add('purple');
+        statusBadge.textContent = 'LOW';
+      } else if (zones.includes('blue')) {
+        statusCircle.classList.add('blue');
+        statusBadge.textContent = 'OK';
+      } else if (zones.includes('green')) {
+        statusCircle.classList.add('green');
+        statusBadge.textContent = 'GOOD';
+      } else {
+        statusCircle.classList.add('green');
+        statusBadge.textContent = 'SAFE';
       }
     }
 
+    // ============================================
+    // TIMER
+    // ============================================
     function updateTimer() {
       if (!state.startTime) return;
       const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
@@ -1033,50 +1303,66 @@
     }
 
     // ============================================
-    // MEDIAPIPE RESULTS HANDLER
+    // MEDIAPIPE RESULTS
     // ============================================
     function onResults(results) {
       resizeCanvas();
       computeVideoMapping();
-
-      // Clear canvas
       ctx.clearRect(0, 0, canvasW, canvasH);
 
-      // Draw video (mirrored)
       if (results.image) {
         drawVideo(results.image);
       }
 
-      // Check for hand
       const hand = results.multiHandLandmarks && results.multiHandLandmarks[0];
 
       if (!hand) {
-        updateStatus('IDLE');
-        stepIndicator.textContent = 'Show your hand to camera';
-        debugInfo.textContent = 'No hand detected';
+        statusBadge.textContent = 'IDLE';
+        statusCircle.className = 'status-circle';
+        fingerZonesEl.innerHTML = '<span style="color:var(--text-muted)">Show your hand...</span>';
         return;
       }
 
-      // Smooth landmarks
       const lm = smoothLandmarks(hand);
 
-      // Draw skeleton
-      drawSkeleton(lm);
+      // 1. Draw safe zone blob (background)
+      drawSafeZoneBlob(lm);
 
-      // Draw IBE overlay and get boundaries
-      const boundaries = drawIBEOverlay(lm);
+      // 2. Draw curved boundary lines and get points
+      const pipPoints = BOUNDARY_NODES.PIP.map(i => toPx(lm[i]));
+      const dipPoints = BOUNDARY_NODES.DIP.map(i => toPx(lm[i]));
+      const tipPoints = BOUNDARY_NODES.TIP.map(i => toPx(lm[i]));
 
-      // Draw node numbers (on top)
-      drawNodeNumbers(lm);
+      // 3. Draw zone fills between boundaries
+      const alpha = state.opacity;
+      drawZoneFill(pipPoints, dipPoints, `rgba(59, 130, 246, ${alpha})`);  // Blue between PIP-DIP
+      drawZoneFill(dipPoints, tipPoints, `rgba(139, 92, 246, ${alpha * 0.9})`); // Purple between DIP-TIP
 
-      // Evaluate zone
-      const zone = evaluateZone(lm, boundaries);
-      updateStatus(zone);
+      // 4. Draw boundary lines
+      drawCurvedBoundaryLine(lm, BOUNDARY_NODES.PIP, '#22c55e', 4);  // Green
+      drawCurvedBoundaryLine(lm, BOUNDARY_NODES.DIP, '#3b82f6', 4);  // Blue
+      drawCurvedBoundaryLine(lm, BOUNDARY_NODES.TIP, '#8b5cf6', 4);  // Purple
 
-      stepIndicator.textContent = `Zone: ${zone} | Mode: ${state.mode}`;
-      debugInfo.textContent = `IBE: ${state.ibeEnabled ? 'ON' : 'OFF'} | Nodes: ${state.nodesEnabled ? 'ON' : 'OFF'} | Mode: ${state.mode}`;
+      // 5. Red line
+      const redLine = getRedLine(lm);
+      drawRedLine(redLine);
 
-      // Update timer
+      // 6. Detect zones
+      const fingerZoneData = detectFingerZones(lm, pipPoints, dipPoints, tipPoints);
+      const thumbCrossing = checkThumbCrossing(lm, redLine);
+
+      // 6b. Check exercise-specific finger states
+      const fingerViolations = getFingerStateViolations(lm, state.mode);
+
+      // 7. Draw skeleton with zone colors
+      drawSkeleton(lm, fingerZoneData, thumbCrossing);
+
+      // 8. Draw numbered nodes with glow
+      drawNodes(lm, fingerZoneData, thumbCrossing);
+
+      // 9. Update UI
+      updateZoneReport(fingerZoneData, thumbCrossing, fingerViolations);
+      updateStatus(fingerZoneData, thumbCrossing);
       updateTimer();
     }
 
@@ -1087,7 +1373,6 @@
 
     async function start() {
       if (state.running) return;
-
       resizeCanvas();
 
       hands = new Hands({
@@ -1117,13 +1402,12 @@
         await camera.start();
         state.running = true;
         state.startTime = Date.now();
-        btnStart.classList.add('active');
-        btnStart.textContent = '✓ Running';
+        document.getElementById('btnStart').classList.add('active');
+        document.getElementById('btnStart').textContent = '✓ Running';
         statusBadge.textContent = 'ON';
-        debugInfo.textContent = 'Camera started. Show your hand.';
       } catch (e) {
         statusBadge.textContent = 'ERROR';
-        debugInfo.textContent = 'Camera error: ' + e.message;
+        console.error(e);
       }
     }
 
@@ -1135,57 +1419,57 @@
       computeVideoMapping();
     });
 
-    settingsToggle.onclick = () => {
-      settingsDrawer.classList.toggle('open');
-    };
+    settingsToggle.onclick = () => settingsDrawer.classList.toggle('open');
 
-    btnStart.onclick = start;
+    document.getElementById('btnStart').onclick = start;
 
-    btnPause.onclick = () => {
+    document.getElementById('btnPause').onclick = function() {
       state.paused = !state.paused;
-      btnPause.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
-      btnPause.classList.toggle('active', state.paused);
+      this.textContent = state.paused ? '▶ Resume' : '⏸ Pause';
+      this.classList.toggle('active', state.paused);
     };
 
-    btnIBE.onclick = () => {
+    document.getElementById('btnIBE').onclick = function() {
       state.ibeEnabled = !state.ibeEnabled;
-      btnIBE.textContent = `🔍 IBE: ${state.ibeEnabled ? 'ON' : 'OFF'}`;
-      btnIBE.classList.toggle('active', state.ibeEnabled);
+      this.textContent = state.ibeEnabled ? '🔍 IBE' : '🔍 IBE';
+      this.classList.toggle('active', state.ibeEnabled);
     };
 
-    btnNodes.onclick = () => {
+    document.getElementById('btnNodes').onclick = function() {
       state.nodesEnabled = !state.nodesEnabled;
-      btnNodes.textContent = `🔢 Nodes: ${state.nodesEnabled ? 'ON' : 'OFF'}`;
-      btnNodes.classList.toggle('active', state.nodesEnabled);
+      this.textContent = state.nodesEnabled ? '🔢 Nodes' : '🔢 Nodes';
+      this.classList.toggle('active', state.nodesEnabled);
     };
 
-    modeSelect.onchange = (e) => {
-      state.mode = e.target.value;
+    document.getElementById('btnZones').onclick = function() {
+      state.zonesEnabled = !state.zonesEnabled;
+      this.textContent = state.zonesEnabled ? '🎨 Zones' : '🎨 Zones';
+      this.classList.toggle('active', state.zonesEnabled);
     };
 
-    opacitySlider.oninput = (e) => {
-      state.opacity = Number(e.target.value);
-      opacityVal.textContent = state.opacity.toFixed(2);
+    document.getElementById('modeSelect').onchange = (e) => state.mode = e.target.value;
+
+    document.getElementById('opacitySlider').oninput = function() {
+      state.opacity = Number(this.value);
+      document.getElementById('opacityVal').textContent = state.opacity.toFixed(2);
     };
 
-    spacingSlider.oninput = (e) => {
-      state.spacing = Number(e.target.value);
-      spacingVal.textContent = state.spacing;
+    document.getElementById('redOffsetSlider').oninput = function() {
+      state.redLineOffset = Number(this.value);
+      document.getElementById('redOffsetVal').textContent = state.redLineOffset;
     };
 
-    smoothSlider.oninput = (e) => {
-      state.smooth = Number(e.target.value);
-      smoothVal.textContent = state.smooth.toFixed(2);
+    document.getElementById('smoothSlider').oninput = function() {
+      state.smooth = Number(this.value);
+      document.getElementById('smoothVal').textContent = state.smooth.toFixed(2);
     };
 
-    // Close settings when clicking outside
     document.addEventListener('click', (e) => {
       if (!settingsDrawer.contains(e.target) && e.target !== settingsToggle) {
         settingsDrawer.classList.remove('open');
       }
     });
 
-    // Initialize
     resizeCanvas();
   </script>
 </body>
