@@ -746,7 +746,8 @@
     // ============================================
     function getRedLine(lm) {
       const wrist = toPx(lm[0]);
-      const thumbCMC = toPx(lm[1]);  // Node 1: first thumb joint - RED LINE BOUNDARY
+      const thumbCMC = toPx(lm[1]);  // Node 1
+      const thumbMCP = toPx(lm[2]);  // Node 2
       const middleMCP = toPx(lm[9]);
       const indexMCP = toPx(lm[5]);
       const pinkyMCP = toPx(lm[17]);
@@ -759,14 +760,10 @@
       const axisLen = Math.hypot(axisRaw.x, axisRaw.y) || 1;
       const axis = { x: axisRaw.x / axisLen, y: axisRaw.y / axisLen };
 
-      // Perpendicular direction for leftward offset (away from thumb)
-      const perpendicular = { x: -axis.y, y: axis.x };
-
-      // Red line base offset to the left by a few inches
-      const leftOffset = 80;  // Adjust this value to move left/right
+      // Red line positioned between node 1 and node 2, closer to node 2 (70% toward node 2)
       const base = {
-        x: thumbCMC.x + perpendicular.x * leftOffset,
-        y: thumbCMC.y + perpendicular.y * leftOffset,
+        x: thumbCMC.x + (thumbMCP.x - thumbCMC.x) * 0.7,
+        y: thumbCMC.y + (thumbMCP.y - thumbCMC.y) * 0.7
       };
 
       // Extend line endpoints along the palm axis
