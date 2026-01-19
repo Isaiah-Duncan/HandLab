@@ -800,10 +800,6 @@
       const wrist = toPx(lm[0]);
       const { quality, angle } = getCameraPerspectiveQuality(lm);
 
-      // Ring properties
-      const ringRadius = 40;
-      const ringWidth = 8;
-
       // Color based on quality
       const colors = {
         green: '#22c55e',
@@ -811,42 +807,46 @@
         red: '#ef4444'
       };
 
+      const ringRadius = 35;
+      const ringWidth = 6;
+      const depth = 15; // 3D perspective depth
+
       ctx.save();
 
-      // Draw background ring
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      // Draw back arc (faded, 3D depth)
+      ctx.strokeStyle = `rgba(255, 255, 255, 0.05)`;
       ctx.lineWidth = ringWidth;
       ctx.beginPath();
-      ctx.arc(wrist.x, wrist.y, ringRadius, 0, Math.PI * 2);
+      ctx.ellipse(wrist.x, wrist.y + depth, ringRadius * 0.95, ringRadius * 0.5, 0, Math.PI, 0, false);
       ctx.stroke();
 
-      // Draw quality ring (progress indicator)
+      // Draw front arc with quality color (visible part)
       ctx.strokeStyle = colors[quality];
       ctx.lineWidth = ringWidth;
       ctx.lineCap = 'round';
       ctx.beginPath();
-      ctx.arc(wrist.x, wrist.y, ringRadius, -Math.PI / 2, (-Math.PI / 2) + (Math.PI * 2 * 0.8), false);
+      ctx.ellipse(wrist.x, wrist.y - depth, ringRadius, ringRadius * 0.6, 0, 0, Math.PI, false);
       ctx.stroke();
 
-      // Draw angle indicator line from wrist
-      const angleRad = angle * (Math.PI / 180);
-      const lineEnd = {
-        x: wrist.x + Math.cos(angleRad) * (ringRadius + 15),
-        y: wrist.y + Math.sin(angleRad) * (ringRadius + 15)
-      };
-
-      ctx.strokeStyle = colors[quality];
-      ctx.lineWidth = 2;
+      // Draw side connectors for 3D effect
+      ctx.strokeStyle = `rgba(255, 255, 255, 0.15)`;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 2]);
+      const leftX = wrist.x - ringRadius;
+      const rightX = wrist.x + ringRadius;
       ctx.beginPath();
-      ctx.moveTo(wrist.x, wrist.y);
-      ctx.lineTo(lineEnd.x, lineEnd.y);
+      ctx.moveTo(leftX, wrist.y - depth);
+      ctx.lineTo(leftX, wrist.y + depth);
+      ctx.moveTo(rightX, wrist.y - depth);
+      ctx.lineTo(rightX, wrist.y + depth);
       ctx.stroke();
+      ctx.setLineDash([]);
 
-      // Draw quality label
+      // Draw quality label below wrist
       ctx.fillStyle = colors[quality];
-      ctx.font = 'bold 11px monospace';
+      ctx.font = 'bold 10px monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(quality.toUpperCase(), wrist.x, wrist.y + ringRadius + 25);
+      ctx.fillText(quality.toUpperCase(), wrist.x, wrist.y + ringRadius + 30);
 
       ctx.restore();
     }
