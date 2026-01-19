@@ -746,41 +746,10 @@
     // ============================================
     function getRedLine(lm) {
       const wrist = toPx(lm[0]);
-      const indexMCP = toPx(lm[5]);
+      const thumbCMC = toPx(lm[1]);  // Node 1: first thumb joint - RED LINE BOUNDARY
       const middleMCP = toPx(lm[9]);
-      const ringMCP = toPx(lm[13]);
+      const indexMCP = toPx(lm[5]);
       const pinkyMCP = toPx(lm[17]);
-      const thumbMCP = toPx(lm[2]);
-
-      // Compute palm center
-      const palmCenter = {
-        x: (wrist.x + indexMCP.x + middleMCP.x + ringMCP.x + pinkyMCP.x) / 5,
-        y: (wrist.y + indexMCP.y + middleMCP.y + ringMCP.y + pinkyMCP.y) / 5,
-      };
-
-      // Across-knuckles direction (pinky → index)
-      const edge = {
-        x: pinkyMCP.x - indexMCP.x,
-        y: pinkyMCP.y - indexMCP.y
-      };
-      const edgeLen = Math.hypot(edge.x, edge.y) || 1;
-
-      // Candidate normal (perpendicular to knuckle line)
-      let normal = {
-        x: -edge.y / edgeLen,
-        y: edge.x / edgeLen
-      };
-
-      // Pick the normal that points AWAY from the thumb (for right hand, points LEFT)
-      const thumbVec = {
-        x: thumbMCP.x - palmCenter.x,
-        y: thumbMCP.y - palmCenter.y
-      };
-      const dotTN = thumbVec.x * normal.x + thumbVec.y * normal.y;
-      if (dotTN > 0) {
-        normal.x *= -1;
-        normal.y *= -1;
-      }
 
       // Hand size estimate
       const handSize = Math.max(60, Math.hypot(pinkyMCP.x - indexMCP.x, pinkyMCP.y - indexMCP.y));
@@ -790,14 +759,10 @@
       const axisLen = Math.hypot(axisRaw.x, axisRaw.y) || 1;
       const axis = { x: axisRaw.x / axisLen, y: axisRaw.y / axisLen };
 
-      // Offset the base point
-      const offset = state.redLineOffset;
-      const base = {
-        x: palmCenter.x + normal.x * offset,
-        y: palmCenter.y + normal.y * offset,
-      };
+      // Red line passes through thumbCMC (node 1)
+      const base = thumbCMC;
 
-      // Extend line endpoints
+      // Extend line endpoints along the palm axis
       const extendBefore = 0.35 * handSize;
       const extendAfter = 1.25 * handSize;
 
@@ -809,6 +774,12 @@
       const end = {
         x: base.x + axis.x * extendAfter,
         y: base.y + axis.y * extendAfter,
+      };
+
+      // Perpendicular normal for crossing detection
+      const normal = {
+        x: -axis.y,
+        y: axis.x
       };
 
       // Return with normal and base for crossing detection
