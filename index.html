@@ -507,6 +507,8 @@
     const statusBadge = document.getElementById('statusBadge');
     const statusCircle = document.getElementById('statusCircle');
     const fingerZonesEl = document.getElementById('fingerZones');
+    const exerciseNameEl = document.getElementById('exerciseName');
+    const exerciseDescEl = document.getElementById('exerciseDesc');
 
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsDrawer = document.getElementById('settingsDrawer');
@@ -705,7 +707,7 @@
     // DRAWING: GREEN SAFE ZONE BLOB
     // ============================================
     function drawSafeZoneBlob(lm) {
-      if (!state.zonesEnabled) return;
+      if (!state.ibeEnabled || !state.zonesEnabled) return;
 
       const alpha = state.opacity;
 
@@ -813,7 +815,7 @@
     // DRAWING: ZONE FILLS BETWEEN BOUNDARIES
     // ============================================
     function drawZoneFill(topPoints, bottomPoints, color) {
-      if (!state.zonesEnabled || !topPoints || !bottomPoints) return;
+      if (!state.ibeEnabled || !state.zonesEnabled || !topPoints || !bottomPoints) return;
       if (topPoints.length < 2 || bottomPoints.length < 2) return;
 
       ctx.save();
@@ -1065,70 +1067,63 @@
     // ============================================
     // SMART EXERCISE LOGIC (UP vs DOWN fingers)
     // ============================================
+    const EXERCISE_LIBRARY = {
+      open: { id: 'open', name: 'Open Hand', desc: 'All fingers extended', type: 'isolation', targetFingers: [0, 1, 2, 3, 4] },
+      scout: { id: 'scout', name: 'Scout Salute', desc: 'Index, middle, ring up', type: 'isolation', targetFingers: [1, 2, 3] },
+      pointer: { id: 'pointer', name: 'Pointer Finger', desc: 'Extend only your index finger', type: 'isolation', targetFingers: [1] },
+      peace: { id: 'peace', name: 'Peace Sign', desc: 'Extend index and middle fingers', type: 'isolation', targetFingers: [1, 2] },
+      pinch_ti: { id: 'pinch_ti', name: 'Pinch: Thumb + Index', desc: 'Touch thumb to index tip', type: 'pinch', pinchPair: [4, 8] },
+      pinch_tp: { id: 'pinch_tp', name: 'Pinch: Thumb + Pinky', desc: 'Touch thumb to pinky tip', type: 'pinch', pinchPair: [4, 20] },
+      thumbs_up: { id: 'thumbs_up', name: 'Thumbs Up', desc: 'Extend only your thumb', type: 'isolation', targetFingers: [0] },
+      middle_finger_lift: { id: 'middle_finger_lift', name: 'Middle Finger Lift', desc: 'Extend only your middle finger', type: 'isolation', targetFingers: [2] },
+      ring_finger_lift: { id: 'ring_finger_lift', name: 'Ring Finger Lift', desc: 'Extend only your ring finger', type: 'isolation', targetFingers: [3] },
+      pinky_out: { id: 'pinky_out', name: 'Pinky Extension', desc: 'Extend only your pinky finger', type: 'isolation', targetFingers: [4] },
+      rock_on: { id: 'rock_on', name: 'Rock On', desc: 'Extend index and pinky only', type: 'isolation', targetFingers: [1, 4] },
+      hang_loose: { id: 'hang_loose', name: 'Hang Loose', desc: 'Extend thumb and pinky only', type: 'isolation', targetFingers: [0, 4] },
+      four_fingers: { id: 'four_fingers', name: 'Four Up', desc: 'Extend all fingers except thumb', type: 'isolation', targetFingers: [1, 2, 3, 4] },
+      ok_sign: { id: 'ok_sign', name: 'OK Sign', desc: 'Touch thumb tip to index tip', type: 'pinch', pinchPair: [4, 8] },
+      thumb_to_middle: { id: 'thumb_to_middle', name: 'Thumb to Middle', desc: 'Touch thumb to middle fingertip', type: 'pinch', pinchPair: [4, 12] },
+      thumb_to_ring: { id: 'thumb_to_ring', name: 'Thumb to Ring', desc: 'Touch thumb to ring fingertip', type: 'pinch', pinchPair: [4, 16] },
+      thumb_to_pinky: { id: 'thumb_to_pinky', name: 'Thumb to Pinky', desc: 'Touch thumb to pinky tip', type: 'pinch', pinchPair: [4, 20] },
+      starfish: { id: 'starfish', name: 'Starfish Spread', desc: 'Spread all fingers wide', type: 'spread' },
+      flat_hand: { id: 'flat_hand', name: 'Flat Hand', desc: 'Fingers together, fully extended', type: 'flat' },
+      fist: { id: 'fist', name: 'Gentle Fist', desc: 'Curl all fingers into a fist', type: 'fist' },
+    };
+
+    const TIP_INDEX_TO_NAME = { 4: 'thumb', 8: 'index', 12: 'middle', 16: 'ring', 20: 'pinky' };
+    const FINGER_INDEX_TO_NAME = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+
+    function getExerciseDefinition(mode) {
+      return EXERCISE_LIBRARY[mode] || null;
+    }
+
+    function updateExerciseMeta(mode) {
+      const ex = getExerciseDefinition(mode);
+      if (!ex) {
+        exerciseNameEl.textContent = 'Dynamic IBE Visualizer';
+        exerciseDescEl.textContent = 'Boundaries bend with your fingers';
+        return;
+      }
+      exerciseNameEl.textContent = ex.name;
+      exerciseDescEl.textContent = ex.desc;
+    }
+
+    function buildExpectedStatesFromTargets(targetFingers) {
+      const expected = { thumb: 'down', index: 'down', middle: 'down', ring: 'down', pinky: 'down' };
+      for (const idx of targetFingers || []) {
+        const name = FINGER_INDEX_TO_NAME[idx];
+        if (name) expected[name] = 'up';
+      }
+      return expected;
+    }
+
     function getExpectedFingerStates(mode) {
       // Returns { fingerName: 'up' | 'down' }
-      switch (mode) {
-        case 'open':
-          // All fingers extended
-          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
-        case 'scout':
-          // Scout salute: index+middle+ring UP, thumb+pinky DOWN
-          return { index: 'up', middle: 'up', ring: 'up', pinky: 'down', thumb: 'down' };
-        case 'pointer':
-          // Index only extended
-          return { index: 'up', middle: 'down', ring: 'down', pinky: 'down', thumb: 'down' };
-        case 'peace':
-          // Peace sign: index+middle UP
-          return { index: 'up', middle: 'up', ring: 'down', pinky: 'down', thumb: 'down' };
-        case 'pinch_ti':
-          // Pinch thumb to index: thumb+index UP, others DOWN
-          return { index: 'up', middle: 'down', ring: 'down', pinky: 'down', thumb: 'up' };
-        case 'pinch_tp':
-          // Pinch thumb to pinky: thumb+pinky UP, others DOWN
-          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
-        case 'thumbs_up':
-          // Thumb only extended
-          return { index: 'down', middle: 'down', ring: 'down', pinky: 'down', thumb: 'up' };
-        case 'middle_finger_lift':
-          // Middle only extended
-          return { index: 'down', middle: 'up', ring: 'down', pinky: 'down', thumb: 'down' };
-        case 'ring_finger_lift':
-          // Ring only extended
-          return { index: 'down', middle: 'down', ring: 'up', pinky: 'down', thumb: 'down' };
-        case 'pinky_out':
-          // Pinky only extended
-          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'down' };
-        case 'rock_on':
-          // Index+pinky up
-          return { index: 'up', middle: 'down', ring: 'down', pinky: 'up', thumb: 'down' };
-        case 'hang_loose':
-          // Thumb+pinky up
-          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
-        case 'four_fingers':
-          // All fingers up except thumb
-          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'down' };
-        case 'ok_sign':
-          // Thumb+index up
-          return { index: 'up', middle: 'down', ring: 'down', pinky: 'down', thumb: 'up' };
-        case 'thumb_to_middle':
-          // Thumb+middle up
-          return { index: 'down', middle: 'up', ring: 'down', pinky: 'down', thumb: 'up' };
-        case 'thumb_to_ring':
-          // Thumb+ring up
-          return { index: 'down', middle: 'down', ring: 'up', pinky: 'down', thumb: 'up' };
-        case 'thumb_to_pinky':
-          // Thumb+pinky up
-          return { index: 'down', middle: 'down', ring: 'down', pinky: 'up', thumb: 'up' };
-        case 'flat_hand':
-        case 'starfish':
-          // All fingers extended
-          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
-        case 'fist':
-          // All fingers down
-          return { index: 'down', middle: 'down', ring: 'down', pinky: 'down', thumb: 'down' };
-        default:
-          return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
+      const ex = getExerciseDefinition(mode);
+      if (ex && ex.type === 'isolation') {
+        return buildExpectedStatesFromTargets(ex.targetFingers);
       }
+      return { index: 'up', middle: 'up', ring: 'up', pinky: 'up', thumb: 'up' };
     }
 
     function computeFingerExtension(lm, fingerName) {
@@ -1170,6 +1165,74 @@
       }
 
       return { correct, wrong };
+    }
+
+    function computeHandWidth(lm) {
+      const a = lm[5];
+      const b = lm[17];
+      return Math.max(0.0001, Math.hypot(a.x - b.x, a.y - b.y));
+    }
+
+    function computeNormalizedDistance(lm, idx1, idx2) {
+      const p1 = lm[idx1];
+      const p2 = lm[idx2];
+      const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y, (p1.z || 0) - (p2.z || 0));
+      return dist / computeHandWidth(lm);
+    }
+
+    function getExerciseViolations(lm, mode) {
+      const ex = getExerciseDefinition(mode);
+      if (!ex || ex.type === 'isolation') {
+        return getFingerStateViolations(lm, mode);
+      }
+
+      const wrong = [];
+      if (ex.type === 'pinch') {
+        const dist = computeNormalizedDistance(lm, ex.pinchPair[0], ex.pinchPair[1]);
+        if (dist > 0.12) {
+          const a = TIP_INDEX_TO_NAME[ex.pinchPair[0]] || 'thumb';
+          const b = TIP_INDEX_TO_NAME[ex.pinchPair[1]] || 'finger';
+          wrong.push(`pinch too wide (${a} + ${b})`);
+        }
+      } else if (ex.type === 'spread') {
+        for (const fingerName of ['thumb', 'index', 'middle', 'ring', 'pinky']) {
+          if (!computeFingerExtension(lm, fingerName)) {
+            wrong.push(`${fingerName} should be up`);
+          }
+        }
+        const tips = [4, 8, 12, 16, 20];
+        let gapSum = 0;
+        for (let i = 0; i < tips.length - 1; i++) {
+          gapSum += computeNormalizedDistance(lm, tips[i], tips[i + 1]);
+        }
+        const avgGap = gapSum / 4;
+        if (avgGap < 0.12) {
+          wrong.push('spread wider');
+        }
+      } else if (ex.type === 'flat') {
+        for (const fingerName of ['thumb', 'index', 'middle', 'ring', 'pinky']) {
+          if (!computeFingerExtension(lm, fingerName)) {
+            wrong.push(`${fingerName} should be up`);
+          }
+        }
+        const tips = [4, 8, 12, 16, 20];
+        let gapSum = 0;
+        for (let i = 0; i < tips.length - 1; i++) {
+          gapSum += computeNormalizedDistance(lm, tips[i], tips[i + 1]);
+        }
+        const avgGap = gapSum / 4;
+        if (avgGap > 0.10) {
+          wrong.push('fingers too spread');
+        }
+      } else if (ex.type === 'fist') {
+        for (const fingerName of ['thumb', 'index', 'middle', 'ring', 'pinky']) {
+          if (computeFingerExtension(lm, fingerName)) {
+            wrong.push(`${fingerName} should be down`);
+          }
+        }
+      }
+
+      return { correct: wrong.length === 0 ? ['ok'] : [], wrong };
     }
 
     // ============================================
@@ -1248,6 +1311,8 @@
     // DRAWING: SKELETON WITH ZONE GLOW
     // ============================================
     function drawSkeleton(lm, fingerZoneData, thumbCrossing) {
+      const useIbe = state.ibeEnabled;
+      const neutralLine = 'rgba(255,255,255,0.85)';
       const zoneColors = {
         green: '#22c55e',
         blue: '#3b82f6',
@@ -1265,6 +1330,15 @@
       for (const [i, j] of CONNECTIONS) {
         const a = toPx(lm[i]);
         const b = toPx(lm[j]);
+
+        if (!useIbe) {
+          ctx.strokeStyle = neutralLine;
+          ctx.beginPath();
+          ctx.moveTo(a.x, a.y);
+          ctx.lineTo(b.x, b.y);
+          ctx.stroke();
+          continue;
+        }
 
         // Determine color based on zone
         let color = '#40E0D0';
@@ -1339,6 +1413,27 @@
     // ============================================
     function drawNodes(lm, fingerZoneData, thumbCrossing) {
       if (!state.nodesEnabled) return;
+
+      if (!state.ibeEnabled) {
+        for (let i = 0; i < 21; i++) {
+          const p = toPx(lm[i]);
+          ctx.fillStyle = 'rgba(0,0,0,0.65)';
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 10, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 9px Arial';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(String(i), p.x, p.y);
+        }
+        return;
+      }
 
       const zoneColors = {
         green: '#22c55e',
@@ -1435,16 +1530,23 @@
       let html = '';
 
       // Show expected finger states for current mode
-      const expected = getExpectedFingerStates(state.mode);
-      const upFingers = Object.entries(expected).filter(([_, v]) => v === 'up').map(([k]) => k);
-      const downFingers = Object.entries(expected).filter(([_, v]) => v === 'down').map(([k]) => k);
+      const ex = getExerciseDefinition(state.mode);
+      if (ex && ex.type === 'isolation') {
+        const expected = getExpectedFingerStates(state.mode);
+        const upFingers = Object.entries(expected).filter(([_, v]) => v === 'up').map(([k]) => k);
+        const downFingers = Object.entries(expected).filter(([_, v]) => v === 'down').map(([k]) => k);
 
-      html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
-        <span>Expected UP: ${upFingers.length > 0 ? upFingers.join(', ') : 'none'}</span>
-      </div>`;
-      if (downFingers.length > 0) {
         html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
-          <span>Expected DOWN: ${downFingers.join(', ')}</span>
+          <span>Expected UP: ${upFingers.length > 0 ? upFingers.join(', ') : 'none'}</span>
+        </div>`;
+        if (downFingers.length > 0) {
+          html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
+            <span>Expected DOWN: ${downFingers.join(', ')}</span>
+          </div>`;
+        }
+      } else if (ex) {
+        html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
+          <span>Expected: ${ex.desc}</span>
         </div>`;
       }
 
@@ -1551,40 +1653,50 @@
 
       const lm = smoothLandmarks(hand);
 
-      // 1. Draw safe zone blob (background)
-      drawSafeZoneBlob(lm);
+      let fingerZoneData = {
+        index: { zone: 'safe', nodes: [], crossingNodes: [], flash: 'none' },
+        middle: { zone: 'safe', nodes: [], crossingNodes: [], flash: 'none' },
+        ring: { zone: 'safe', nodes: [], crossingNodes: [], flash: 'none' },
+        pinky: { zone: 'safe', nodes: [], crossingNodes: [], flash: 'none' },
+      };
+      let thumbCrossing = [];
 
-      // 2. Draw curved boundary lines and get points
-      const pipPoints = BOUNDARY_NODES.PIP.map(i => toPx(lm[i]));
-      const dipPoints = BOUNDARY_NODES.DIP.map(i => toPx(lm[i]));
-      const tipPoints = BOUNDARY_NODES.TIP.map(i => toPx(lm[i]));
+      if (state.ibeEnabled) {
+        // 1. Draw safe zone blob (background)
+        drawSafeZoneBlob(lm);
 
-      // 3. Draw zone fills between boundaries
-      const alpha = state.opacity;
-      drawZoneFill(pipPoints, dipPoints, `rgba(59, 130, 246, ${alpha})`);  // Blue between PIP-DIP
-      drawZoneFill(dipPoints, tipPoints, `rgba(139, 92, 246, ${alpha * 0.9})`); // Purple between DIP-TIP
+        // 2. Draw curved boundary lines and get points
+        const pipPoints = BOUNDARY_NODES.PIP.map(i => toPx(lm[i]));
+        const dipPoints = BOUNDARY_NODES.DIP.map(i => toPx(lm[i]));
+        const tipPoints = BOUNDARY_NODES.TIP.map(i => toPx(lm[i]));
 
-      // 4. Draw boundary lines
-      drawCurvedBoundaryLine(lm, BOUNDARY_NODES.PIP, '#22c55e', 4);  // Green
-      drawCurvedBoundaryLine(lm, BOUNDARY_NODES.DIP, '#3b82f6', 4);  // Blue
-      drawCurvedBoundaryLine(lm, BOUNDARY_NODES.TIP, '#8b5cf6', 4);  // Purple
+        // 3. Draw zone fills between boundaries
+        const alpha = state.opacity;
+        drawZoneFill(pipPoints, dipPoints, `rgba(59, 130, 246, ${alpha})`);  // Blue between PIP-DIP
+        drawZoneFill(dipPoints, tipPoints, `rgba(139, 92, 246, ${alpha * 0.9})`); // Purple between DIP-TIP
 
-      // 5. Red line
-      const redLine = getRedLine(lm);
-      drawRedLine(redLine);
+        // 4. Draw boundary lines
+        drawCurvedBoundaryLine(lm, BOUNDARY_NODES.PIP, '#22c55e', 4);  // Green
+        drawCurvedBoundaryLine(lm, BOUNDARY_NODES.DIP, '#3b82f6', 4);  // Blue
+        drawCurvedBoundaryLine(lm, BOUNDARY_NODES.TIP, '#8b5cf6', 4);  // Purple
 
-      // 5b. Camera perspective ring
-      drawCameraPerspectiveRing(lm);
+        // 5. Red line
+        const redLine = getRedLine(lm);
+        drawRedLine(redLine);
 
-      // 6. Detect zones
-      const fingerZoneData = detectFingerZones(lm, pipPoints, dipPoints, tipPoints);
-      const thumbCrossing = checkThumbCrossing(lm, redLine, currentHandedness);
+        // 5b. Camera perspective ring
+        drawCameraPerspectiveRing(lm);
+
+        // 6. Detect zones
+        fingerZoneData = detectFingerZones(lm, pipPoints, dipPoints, tipPoints);
+        thumbCrossing = checkThumbCrossing(lm, redLine, currentHandedness);
+
+        // 6c. Draw wrist ring quality indicator (behind skeleton)
+        drawWristRing(lm);
+      }
 
       // 6b. Check exercise-specific finger states
-      const fingerViolations = state.smartTestEnabled ? getFingerStateViolations(lm, state.mode) : null;
-
-      // 6c. Draw wrist ring quality indicator (behind skeleton)
-      drawWristRing(lm);
+      const fingerViolations = state.smartTestEnabled ? getExerciseViolations(lm, state.mode) : null;
 
       // 7. Draw skeleton with zone colors
       drawSkeleton(lm, fingerZoneData, thumbCrossing);
@@ -1679,7 +1791,10 @@
       this.classList.toggle('active', state.zonesEnabled);
     };
 
-    document.getElementById('modeSelect').onchange = (e) => state.mode = e.target.value;
+    document.getElementById('modeSelect').onchange = (e) => {
+      state.mode = e.target.value;
+      updateExerciseMeta(state.mode);
+    };
     document.getElementById('btnSmartTest').onclick = function() {
       state.smartTestEnabled = !state.smartTestEnabled;
       this.textContent = state.smartTestEnabled ? 'Smart Test ON' : 'Smart Test OFF';
@@ -1698,6 +1813,7 @@
       }
     });
 
+    updateExerciseMeta(state.mode);
     resizeCanvas();
   </script>
 </body>
