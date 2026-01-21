@@ -67,7 +67,7 @@
         const tiltPenalty = tiltRatio < 0.45 ? 0.12 : tiltRatio < 0.55 ? 0.06 : 0;
         let lengthPenalty = 0;
         if (baseline !== null) {
-          const ratio = lengthNorm / baseline;
+          const ratio = baseline > 0 ? lengthNorm / baseline : 1;
           if (ratio < 0.7) {
             lengthPenalty = 0.18;
           } else if (ratio < 0.85) {

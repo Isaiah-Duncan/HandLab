@@ -1164,6 +1164,41 @@
       ctx.restore();
     }
 
+    function drawSafeZoneBlob(lm) {
+      if (!state.ibeEnabled || !state.zonesEnabled) return;
+
+      const alpha = state.opacity;
+      const wrist = toPx(lm[0]);
+      const thumbCMC = toPx(lm[1]);
+      const thumbMCP = toPx(lm[2]);
+      const indexMCP = toPx(lm[5]);
+      const middleMCP = toPx(lm[9]);
+      const ringMCP = toPx(lm[13]);
+      const pinkyMCP = toPx(lm[17]);
+
+      const indexPIP = toPx(lm[6]);
+      const middlePIP = toPx(lm[10]);
+      const ringPIP = toPx(lm[14]);
+      const pinkyPIP = toPx(lm[18]);
+
+      ctx.save();
+      ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
+      ctx.beginPath();
+      ctx.moveTo(wrist.x, wrist.y);
+      ctx.lineTo(pinkyMCP.x, pinkyMCP.y);
+      ctx.lineTo(pinkyPIP.x, pinkyPIP.y);
+      ctx.lineTo(ringPIP.x, ringPIP.y);
+      ctx.lineTo(middlePIP.x, middlePIP.y);
+      ctx.lineTo(indexPIP.x, indexPIP.y);
+      ctx.lineTo(indexMCP.x, indexMCP.y);
+      ctx.lineTo(thumbMCP.x, thumbMCP.y);
+      ctx.lineTo(thumbCMC.x, thumbCMC.y);
+      ctx.lineTo(wrist.x, wrist.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+
     // ============================================
     // CAMERA PERSPECTIVE QUALITY INDICATOR
     // ============================================
@@ -1962,16 +1997,17 @@
     // MEDIAPIPE RESULTS
     // ============================================
     function onResults(results) {
-      resizeCanvas();
-      computeVideoMapping();
-      ctx.clearRect(0, 0, canvasW, canvasH);
+      try {
+        resizeCanvas();
+        computeVideoMapping();
+        ctx.clearRect(0, 0, canvasW, canvasH);
 
-      if (results.image) {
-        drawVideo(results.image);
-        debugState.lastFrameImage = results.image;
-      }
+        if (results.image) {
+          drawVideo(results.image);
+          debugState.lastFrameImage = results.image;
+        }
 
-      const hand = results.multiHandLandmarks && results.multiHandLandmarks[0];
+        const hand = results.multiHandLandmarks && results.multiHandLandmarks[0];
 
       if (!hand) {
         statusBadge.textContent = 'IDLE';
@@ -2059,6 +2095,9 @@
       updateZoneReport(fingerZoneData, thumbCrossing, fingerViolations);
       updateStatus(fingerZoneData, thumbCrossing);
       updateTimer();
+      } catch (err) {
+        console.error('[onResults error]', err);
+      }
     }
 
     function renderAIPerception(image) {
@@ -2103,7 +2142,11 @@
       camera = new Camera(video, {
         onFrame: async () => {
           if (!state.paused && hands) {
-            await hands.send({ image: video });
+            try {
+              await hands.send({ image: video });
+            } catch (err) {
+              console.error('[MediaPipe send error]', err);
+            }
           }
         },
         width: 1280,
