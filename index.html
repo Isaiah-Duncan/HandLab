@@ -423,10 +423,13 @@
         <button class="settings-btn" id="btnPause">⏸ Pause</button>
       </div>
       <div class="settings-row">
+        <button class="settings-btn" id="btnVisionDebug">AI Vision Debug OFF</button>
+        <button class="settings-btn active" id="btnSkeleton">Skeletal Overlay ON</button>
+      </div>
+      <div class="settings-row">
         <button class="settings-btn active" id="btnIBE">🔍 IBE ON</button>
         <button class="settings-btn active" id="btnNodes">🔢 Nodes</button>
         <button class="settings-btn active" id="btnZones">🎨 Zones</button>
-        <button class="settings-btn" id="btnVisionDebug">AI Vision Debug OFF</button>
       </div>
 
       <h3>Test Mode</h3>
@@ -471,6 +474,7 @@
       nodesEnabled: true,
       zonesEnabled: true,
       debugVisionEnabled: false,
+      skeletonEnabled: true,
       mode: 'open',
       opacity: 0.30,
       redLineOffset: 80,
@@ -1145,12 +1149,6 @@
     function getExpectedFingerStates(mode) {
       // Returns { fingerName: 'up' | 'down' }
       const ex = getExerciseDefinition(mode);
-      if (state.debugVisionEnabled) {
-        html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
-          <span>AI View: ${AI_VIEW_W}x${AI_VIEW_H} pixel input</span>
-        </div>`;
-      }
-
       if (ex && ex.type === 'isolation') {
         return buildExpectedStatesFromTargets(ex.targetFingers);
       }
@@ -1342,6 +1340,7 @@
     // DRAWING: SKELETON WITH ZONE GLOW
     // ============================================
     function drawSkeleton(lm, fingerZoneData, thumbCrossing) {
+      if (!state.skeletonEnabled) return;
       const useIbe = state.ibeEnabled;
       const neutralLine = 'rgba(255,255,255,0.85)';
       const zoneColors = {
@@ -1443,7 +1442,7 @@
     // DRAWING: NODES WITH GLOW
     // ============================================
     function drawNodes(lm, fingerZoneData, thumbCrossing) {
-      if (!state.nodesEnabled) return;
+      if (!state.nodesEnabled || !state.skeletonEnabled) return;
 
       if (!state.ibeEnabled) {
         for (let i = 0; i < 21; i++) {
@@ -1559,6 +1558,12 @@
     // ============================================
     function updateZoneReport(fingerZoneData, thumbCrossing, fingerViolations) {
       let html = '';
+
+      if (state.debugVisionEnabled) {
+        html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
+          <span>AI View: ${AI_VIEW_W}x${AI_VIEW_H} pixel input</span>
+        </div>`;
+      }
 
       // Show expected finger states for current mode
       const ex = getExerciseDefinition(state.mode);
@@ -1861,6 +1866,26 @@
       debugCanvas.classList.toggle('active', state.debugVisionEnabled);
       if (!state.debugVisionEnabled) {
         debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+      }
+    };
+
+    document.getElementById('btnSkeleton').onclick = function() {
+      state.skeletonEnabled = !state.skeletonEnabled;
+      this.textContent = state.skeletonEnabled ? 'Skeletal Overlay ON' : 'Skeletal Overlay OFF';
+      this.classList.toggle('active', state.skeletonEnabled);
+      if (!state.skeletonEnabled) {
+        state.ibeEnabled = false;
+        state.nodesEnabled = false;
+        state.zonesEnabled = false;
+        const btnIbe = document.getElementById('btnIBE');
+        const btnNodes = document.getElementById('btnNodes');
+        const btnZones = document.getElementById('btnZones');
+        btnIbe.classList.remove('active');
+        btnNodes.classList.remove('active');
+        btnZones.classList.remove('active');
+        btnIbe.textContent = '🔍 IBE OFF';
+        btnNodes.textContent = '🔢 Nodes';
+        btnZones.textContent = '🎨 Zones';
       }
     };
 
