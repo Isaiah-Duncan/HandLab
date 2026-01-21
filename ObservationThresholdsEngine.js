@@ -3,6 +3,13 @@
 
   const TIP_INDICES = [4, 8, 12, 16, 20];
   const FINGER_LABELS = ['Thumb', 'Index', 'Middle', 'Ring', 'Pinky'];
+  const FINGER_JOINTS = [
+    [1, 2, 3, 4],
+    [5, 6, 7, 8],
+    [9, 10, 11, 12],
+    [13, 14, 15, 16],
+    [17, 18, 19, 20]
+  ];
 
   function dist(a, b) {
     return Math.hypot(a.x - b.x, a.y - b.y);
@@ -16,11 +23,15 @@
   class ObservationThresholdsEngine {
     constructor() {
       this.tipHistory = Array.from({ length: 5 }, () => []);
+      this.lengthBaseline = Array(5).fill(null);
     }
 
     update(rawLm, toPx) {
-      const tips = TIP_INDICES.map(idx => toPx(rawLm[idx]));
-      const palmWidth = dist(toPx(rawLm[5]), toPx(rawLm[17]));
+      const pointsPx = rawLm.map(toPx);
+      const tips = TIP_INDICES.map(idx => pointsPx[idx]);
+      const palmWidth = dist(pointsPx[5], pointsPx[17]) || 1;
+      const handLength = dist(pointsPx[0], pointsPx[12]) || 1;
+      const tiltRatio = palmWidth / handLength;
 
       tips.forEach((tip, idx) => {
         const history = this.tipHistory[idx];
@@ -29,6 +40,17 @@
       });
 
       const perFinger = tips.map((tip, idx) => {
+        const joints = FINGER_JOINTS[idx];
+        let fingerLength = 0;
+        for (let i = 0; i < joints.length - 1; i += 1) {
+          fingerLength += dist(pointsPx[joints[i]], pointsPx[joints[i + 1]]);
+        }
+        const lengthNorm = fingerLength / palmWidth;
+        const baseline = this.lengthBaseline[idx];
+        if (baseline === null) {
+          this.lengthBaseline[idx] = lengthNorm;
+        }
+
         const history = this.tipHistory[idx];
         let jitter = 0;
         if (history.length > 1) {
@@ -42,8 +64,33 @@
           }
         });
         const scalePenalty = palmWidth < 80 ? 0.3 : 0;
-        const confidence = Math.max(0, Math.min(1, 1 - (jitter / (palmWidth * 0.12)) - occlusionPenalty - scalePenalty));
+        const tiltPenalty = tiltRatio < 0.45 ? 0.12 : tiltRatio < 0.55 ? 0.06 : 0;
+        let lengthPenalty = 0;
+        if (baseline !== null) {
+          const ratio = lengthNorm / baseline;
+          if (ratio < 0.7) {
+            lengthPenalty = 0.18;
+          } else if (ratio < 0.85) {
+            lengthPenalty = 0.08;
+          }
+          if (ratio > 0.9 && occlusionPenalty > 0) {
+            occlusionPenalty = Math.max(0, occlusionPenalty - 0.08);
+          }
+          if (ratio > 0.95 && tiltPenalty > 0) {
+            tiltPenalty = Math.max(0, tiltPenalty - 0.04);
+          }
+        }
+
+        const confidence = Math.max(
+          0,
+          Math.min(1, 1 - (jitter / (palmWidth * 0.12)) - occlusionPenalty - scalePenalty - tiltPenalty - lengthPenalty)
+        );
         const state = confidence > 0.7 ? 'observed' : confidence > 0.4 ? 'less' : 'unobservable';
+
+        if (confidence > 0.75 && occlusionPenalty === 0 && tiltPenalty < 0.05) {
+          this.lengthBaseline[idx] = this.lengthBaseline[idx] * 0.92 + lengthNorm * 0.08;
+        }
+
         return {
           name: FINGER_LABELS[idx],
           state,

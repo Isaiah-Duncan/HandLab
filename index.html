@@ -15,6 +15,8 @@
   <script src="PlausibilityChecksEngine.js"></script>
   <script src="GuidanceGeneratorEngine.js"></script>
   <script src="ReferenceHandEngine.js"></script>
+  <script src="SemanticLogicEngine.js"></script>
+  <script src="ActiveIlluminationEngine.js"></script>
   <script src="ObservationThresholdsLayer.js"></script>
   <script src="DeadFingerLayer.js"></script>
   <script src="RegimeSwitchingLayer.js"></script>
@@ -24,6 +26,8 @@
   <script src="PlausibilityChecksLayer.js"></script>
   <script src="GuidanceGeneratorLayer.js"></script>
   <script src="ReferenceHandLayer.js"></script>
+  <script src="SemanticLogicLayer.js"></script>
+  <script src="ActiveIlluminationLayer.js"></script>
   <script src="DebugUI.js"></script>
   <style>
     /*
@@ -655,6 +659,8 @@
     const plausibilityChecksEngine = new PlausibilityChecksEngine();
     const guidanceGeneratorEngine = new GuidanceGeneratorEngine();
     const referenceHandEngine = new ReferenceHandEngine();
+    const semanticLogicEngine = new SemanticLogicEngine();
+    const activeIlluminationEngine = new ActiveIlluminationEngine();
 
     const debugState = {
       tipHistory: Array.from({ length: 5 }, () => []),
@@ -669,6 +675,7 @@
       stableSince: null,
       mercyUntil: 0,
       pauseUntil: 0,
+      lastFrameImage: null,
     };
 
     layerManager.addPreset('Minimal', ['observationThresholds']);
@@ -681,6 +688,20 @@
       enabled: false,
       opacity: 0.8,
       shortcut: '9'
+    });
+
+    layerManager.addLayer('semanticLogic', window.renderSemanticLogicLayer, {
+      label: 'Semantic Logic',
+      enabled: false,
+      opacity: 0.8,
+      shortcut: '0'
+    });
+
+    layerManager.addLayer('activeIllumination', window.renderActiveIlluminationLayer, {
+      label: 'Active Illumination',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: 'A'
     });
 
     layerManager.addLayer('guidanceGenerator', window.renderGuidanceGeneratorLayer, {
@@ -1026,7 +1047,7 @@
       const tips = observation.tips;
       const perFinger = observation.perFinger;
       const globalState = observation.globalState;
-      const dead = deadFingerEngine.update(observation, now);
+      const dead = deadFingerEngine.update(rawLm, toPx, observation, now);
 
       const regime = regimeSwitchingEngine.update(pointsPx, palmWidthPx, handLengthPx, palmCenter);
       const timeGate = timeGatingEngine.update(regime.mode, globalState, state, now);
@@ -1035,6 +1056,7 @@
       const plausibility = plausibilityChecksEngine.update(pointsPx, palmWidthPx);
       const guidance = guidanceGeneratorEngine.update(scale.status, regime.mode, palmCenter, tips);
       const reference = referenceHandEngine.update(pointsPx, palmWidthPx);
+      const semantic = semanticLogicEngine.update(rawLm, toPx, getExerciseDefinition(state.mode), canvasW, canvasH);
 
       return {
         canvas: { width: canvasW, height: canvasH },
@@ -1053,7 +1075,9 @@
         scale,
         plausibility,
         guidance,
-        reference
+        reference,
+        semantic,
+        activeIllumination: activeIlluminationEngine.update(debugState.lastFrameImage, canvasW, canvasH)
       };
     }
 
@@ -1944,6 +1968,7 @@
 
       if (results.image) {
         drawVideo(results.image);
+        debugState.lastFrameImage = results.image;
       }
 
       const hand = results.multiHandLandmarks && results.multiHandLandmarks[0];
