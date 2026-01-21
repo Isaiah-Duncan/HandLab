@@ -1,6 +1,21 @@
 ﻿(function() {
   'use strict';
 
+  function roundRectPath(ctx, x, y, w, h, r) {
+    const radius = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + radius, y);
+    ctx.lineTo(x + w - radius, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+    ctx.lineTo(x + w, y + h - radius);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+    ctx.lineTo(x + radius, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+    ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y);
+    ctx.closePath();
+  }
+
   function drawStateMachine(ctx, states, current, x, y) {
     const width = 62;
     const height = 20;
@@ -12,8 +27,7 @@
       ctx.fillStyle = active ? 'rgba(136,68,255,0.8)' : 'rgba(255,255,255,0.12)';
       ctx.strokeStyle = 'rgba(255,255,255,0.2)';
       ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.roundRect(sx, y, width, height, 6);
+      roundRectPath(ctx, sx, y, width, height, 6);
       ctx.fill();
       ctx.stroke();
       window.DebugDraw.drawText(ctx, state.toUpperCase(), sx + width / 2, y + height / 2, '#ffffff', '10px sans-serif', 'center');

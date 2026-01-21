@@ -10,13 +10,22 @@
     const band = w / 3;
 
     ctx.save();
-    ctx.globalAlpha = 0.08;
-    ctx.fillStyle = '#ff0000';
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.22;
+    ctx.fillStyle = '#ff0033';
     ctx.fillRect(0, 0, band, h);
-    ctx.fillStyle = '#00ff00';
+    ctx.fillStyle = '#00ff66';
     ctx.fillRect(band, 0, band, h);
-    ctx.fillStyle = '#0000ff';
+    ctx.fillStyle = '#3366ff';
     ctx.fillRect(band * 2, 0, band, h);
+
+    const gradient = ctx.createLinearGradient(0, 0, w, 0);
+    gradient.addColorStop(0, 'rgba(255,0,80,0.35)');
+    gradient.addColorStop(0.5, 'rgba(0,255,140,0.25)');
+    gradient.addColorStop(1, 'rgba(60,120,255,0.35)');
+    ctx.globalAlpha = 0.12;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, w, h);
     ctx.restore();
 
     const pw = ai.previewSize.width;
