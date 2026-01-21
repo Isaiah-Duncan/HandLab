@@ -5,6 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>HandHero – Dynamic IBE Boundary Visualizer</title>
   <script src="DebugVisionEngine.js"></script>
+  <script src="DebugLayerManager.js"></script>
+  <script src="ObservationThresholdsEngine.js"></script>
+  <script src="DeadFingerEngine.js"></script>
+  <script src="RegimeSwitchingEngine.js"></script>
+  <script src="TimeGatingEngine.js"></script>
+  <script src="ExerciseInterpreterEngine.js"></script>
+  <script src="ScaleNormalizationEngine.js"></script>
+  <script src="PlausibilityChecksEngine.js"></script>
+  <script src="GuidanceGeneratorEngine.js"></script>
+  <script src="ReferenceHandEngine.js"></script>
+  <script src="ObservationThresholdsLayer.js"></script>
+  <script src="DeadFingerLayer.js"></script>
+  <script src="RegimeSwitchingLayer.js"></script>
+  <script src="TimeGatingLayer.js"></script>
+  <script src="ExerciseInterpreterLayer.js"></script>
+  <script src="ScaleNormalizationLayer.js"></script>
+  <script src="PlausibilityChecksLayer.js"></script>
+  <script src="GuidanceGeneratorLayer.js"></script>
+  <script src="ReferenceHandLayer.js"></script>
+  <script src="DebugUI.js"></script>
   <style>
     /*
      * ============================================
@@ -361,6 +381,104 @@
     .legend-line.blue { background: var(--blue); }
     .legend-line.purple { background: var(--purple); }
     .legend-line.red { background: var(--red); }
+
+    /* ============================================
+       DEBUG LAYER PANEL
+       ============================================ */
+    .debug-layer-panel {
+      position: absolute;
+      top: 180px;
+      left: 16px;
+      width: 300px;
+      max-height: 70vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px;
+      background: rgba(10, 12, 16, 0.88);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+      z-index: 110;
+      font-size: 12px;
+    }
+
+    .debug-layer-panel.hidden { display: none; }
+
+    .debug-layer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .debug-layer-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-height: 44vh;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .debug-layer-item {
+      display: grid;
+      grid-template-columns: 18px 1fr 44px;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 8px;
+      border-radius: 10px;
+      background: rgba(255,255,255,0.04);
+    }
+
+    .debug-layer-item input[type="checkbox"] {
+      width: 16px;
+      height: 16px;
+      accent-color: var(--green);
+    }
+
+    .debug-layer-title {
+      font-weight: 600;
+      color: #f8fafc;
+    }
+
+    .debug-layer-shortcut {
+      font-size: 10px;
+      color: var(--text-muted);
+      text-align: right;
+    }
+
+    .debug-layer-slider {
+      width: 100%;
+    }
+
+    .debug-layer-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .debug-layer-actions button {
+      flex: 1;
+      padding: 8px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.06);
+      color: #f8fafc;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .debug-layer-presets {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
   </style>
 </head>
 <body>
@@ -378,6 +496,26 @@
       <div class="zone-report" id="zoneReport">
         <div class="header">Finger Zone Report</div>
         <div id="fingerZones">Waiting for hand...</div>
+      </div>
+    </div>
+
+    <!-- DEBUG LAYER PANEL -->
+    <div id="debug-layer-panel" class="debug-layer-panel hidden">
+      <div class="debug-layer-header">
+        <span>Debug Layers</span>
+        <button id="debug-ui-hide" class="settings-btn" style="padding:4px 8px">Hide</button>
+      </div>
+      <div id="debug-layer-list" class="debug-layer-list"></div>
+      <div class="debug-layer-actions">
+        <button id="debug-show-all">Show All</button>
+        <button id="debug-hide-all">Hide All</button>
+        <button id="debug-toggle-all">Toggle All</button>
+      </div>
+      <div class="debug-layer-presets">
+        <button id="debug-preset-minimal">Minimal</button>
+        <button id="debug-preset-debug">Debugging</button>
+        <button id="debug-preset-demo">Demo Mode</button>
+        <button id="debug-preset-full">Full Diagnostic</button>
       </div>
     </div>
 
@@ -506,11 +644,109 @@
     const debugLowCanvas = document.createElement('canvas');
     const debugLowCtx = debugLowCanvas.getContext('2d');
 
+    const layerManager = new DebugLayerManager();
+    const debugUI = new DebugUI(layerManager, { panelId: 'debug-layer-panel', listId: 'debug-layer-list' });
+    const observationEngine = new ObservationThresholdsEngine();
+    const deadFingerEngine = new DeadFingerEngine();
+    const regimeSwitchingEngine = new RegimeSwitchingEngine();
+    const timeGatingEngine = new TimeGatingEngine();
+    const exerciseInterpreterEngine = new ExerciseInterpreterEngine();
+    const scaleNormalizationEngine = new ScaleNormalizationEngine();
+    const plausibilityChecksEngine = new PlausibilityChecksEngine();
+    const guidanceGeneratorEngine = new GuidanceGeneratorEngine();
+    const referenceHandEngine = new ReferenceHandEngine();
+
+    const debugState = {
+      tipHistory: Array.from({ length: 5 }, () => []),
+      lastFingerLengths: Array(5).fill(null),
+      lastBoneLengths: null,
+      deadCounters: Array(5).fill(0),
+      reviveUntil: Array(5).fill(0),
+      lastGoodTips: Array(5).fill(null),
+      baselinePalm: null,
+      referenceLm: null,
+      lastRegime: 'front',
+      stableSince: null,
+      mercyUntil: 0,
+      pauseUntil: 0,
+    };
+
+    layerManager.addPreset('Minimal', ['observationThresholds']);
+    layerManager.addPreset('Debugging', ['observationThresholds', 'deadFinger', 'plausibilityChecks']);
+    layerManager.addPreset('Demo Mode', ['referenceHand', 'guidanceGenerator', 'timeGating']);
+    layerManager.addPreset('Full Diagnostic', ['observationThresholds', 'deadFinger', 'regimeSwitching', 'timeGating', 'exerciseInterpreter', 'scaleNormalization', 'plausibilityChecks', 'guidanceGenerator', 'referenceHand']);
+
+    layerManager.addLayer('referenceHand', window.renderReferenceHandLayer, {
+      label: 'Reference Hand (3D)',
+      enabled: false,
+      opacity: 0.8,
+      shortcut: '9'
+    });
+
+    layerManager.addLayer('guidanceGenerator', window.renderGuidanceGeneratorLayer, {
+      label: 'Guidance Generator',
+      enabled: false,
+      opacity: 0.85,
+      shortcut: '8'
+    });
+
+    layerManager.addLayer('plausibilityChecks', window.renderPlausibilityChecksLayer, {
+      label: 'Plausibility Checks',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: '7'
+    });
+
+    layerManager.addLayer('scaleNormalization', window.renderScaleNormalizationLayer, {
+      label: 'Scale Normalization',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: '6'
+    });
+
+    layerManager.addLayer('exerciseInterpreter', window.renderExerciseInterpreterLayer, {
+      label: 'Exercise Interpreter',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: '5'
+    });
+
+    layerManager.addLayer('timeGating', window.renderTimeGatingLayer, {
+      label: 'Time Gating',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: '4'
+    });
+
+    layerManager.addLayer('regimeSwitching', window.renderRegimeSwitchingLayer, {
+      label: 'Regime Switching',
+      enabled: false,
+      opacity: 0.85,
+      shortcut: '3'
+    });
+
+    layerManager.addLayer('deadFinger', window.renderDeadFingerLayer, {
+      label: 'Dead/Ghost Fingers',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: '2'
+    });
+
+    layerManager.addLayer('observationThresholds', window.renderObservationThresholdsLayer, {
+      label: 'Observation Thresholds',
+      enabled: false,
+      opacity: 0.9,
+      shortcut: '1'
+    });
+
+
     const statusBadge = document.getElementById('statusBadge');
     const statusCircle = document.getElementById('statusCircle');
     const fingerZonesEl = document.getElementById('fingerZones');
     const exerciseNameEl = document.getElementById('exerciseName');
     const exerciseDescEl = document.getElementById('exerciseDesc');
+    const debugLayerPanel = document.getElementById('debug-layer-panel');
+    if (debugLayerPanel) debugLayerPanel.classList.remove('hidden');
 
     const settingsToggle = document.getElementById('settingsToggle');
     const settingsDrawer = document.getElementById('settingsDrawer');
@@ -732,56 +968,93 @@
       ctx.restore();
     }
 
-    // ============================================
-    // DRAWING: GREEN SAFE ZONE BLOB
-    // ============================================
-    function drawSafeZoneBlob(lm) {
-      if (!state.ibeEnabled || !state.zonesEnabled) return;
+    function dist(a, b) {
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
 
-      const alpha = state.opacity;
+    function avgPoint(points, indices) {
+      const sum = indices.reduce((acc, idx) => {
+        acc.x += points[idx].x;
+        acc.y += points[idx].y;
+        return acc;
+      }, { x: 0, y: 0 });
+      return { x: sum.x / indices.length, y: sum.y / indices.length };
+    }
 
-      // Get key points to form the blob shape
-      const wrist = toPx(lm[0]);
-      const thumbCMC = toPx(lm[1]);
-      const thumbMCP = toPx(lm[2]);
-      const indexMCP = toPx(lm[5]);
-      const middleMCP = toPx(lm[9]);
-      const ringMCP = toPx(lm[13]);
-      const pinkyMCP = toPx(lm[17]);
+    function computeConvexHull(points) {
+      if (!points || points.length < 3) return points || [];
+      const sorted = points.slice().sort((a, b) => a.x - b.x || a.y - b.y);
+      const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+      const lower = [];
+      for (const p of sorted) {
+        while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+          lower.pop();
+        }
+        lower.push(p);
+      }
+      const upper = [];
+      for (let i = sorted.length - 1; i >= 0; i -= 1) {
+        const p = sorted[i];
+        while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+          upper.pop();
+        }
+        upper.push(p);
+      }
+      upper.pop();
+      lower.pop();
+      return lower.concat(upper);
+    }
 
-      // Get PIP line points (boundary)
-      const indexPIP = toPx(lm[6]);
-      const middlePIP = toPx(lm[10]);
-      const ringPIP = toPx(lm[14]);
-      const pinkyPIP = toPx(lm[18]);
+    function captureReference(lmPx) {
+      debugState.referenceLm = lmPx.map(p => ({ x: p.x, y: p.y }));
+    }
 
-      ctx.save();
-      ctx.fillStyle = `rgba(34, 197, 94, ${alpha})`;
-      ctx.beginPath();
+    function buildEngineStates(rawLm, smoothLm, fingerZoneData, thumbCrossing) {
+      const pointsPx = rawLm.map(toPx);
+      const palmWidthPx = dist(pointsPx[5], pointsPx[17]);
+      const handLengthPx = dist(pointsPx[0], pointsPx[12]);
+      const palmCenter = avgPoint(pointsPx, [0, 5, 9, 13, 17]);
+      const now = performance.now();
 
-      // Start from wrist
-      ctx.moveTo(wrist.x, wrist.y);
+      if (!debugState.baselinePalm) {
+        debugState.baselinePalm = palmWidthPx;
+      } else {
+        debugState.baselinePalm = debugState.baselinePalm * 0.98 + palmWidthPx * 0.02;
+      }
 
-      // Go along the pinky side (wrist → pinkyMCP → pinkyPIP)
-      ctx.lineTo(pinkyMCP.x, pinkyMCP.y);
-      ctx.lineTo(pinkyPIP.x, pinkyPIP.y);
+      const observation = observationEngine.update(rawLm, toPx);
+      const tips = observation.tips;
+      const perFinger = observation.perFinger;
+      const globalState = observation.globalState;
+      const dead = deadFingerEngine.update(observation, now);
 
-      // Follow the PIP boundary line (pinky → ring → middle → index)
-      ctx.lineTo(ringPIP.x, ringPIP.y);
-      ctx.lineTo(middlePIP.x, middlePIP.y);
-      ctx.lineTo(indexPIP.x, indexPIP.y);
+      const regime = regimeSwitchingEngine.update(pointsPx, palmWidthPx, handLengthPx, palmCenter);
+      const timeGate = timeGatingEngine.update(regime.mode, globalState, state, now);
+      const interpreter = exerciseInterpreterEngine.update(fingerZoneData, thumbCrossing, globalState, palmCenter);
+      const scale = scaleNormalizationEngine.update(palmWidthPx, palmCenter, pointsPx, canvasW, canvasH);
+      const plausibility = plausibilityChecksEngine.update(pointsPx, palmWidthPx);
+      const guidance = guidanceGeneratorEngine.update(scale.status, regime.mode, palmCenter, tips);
+      const reference = referenceHandEngine.update(pointsPx, palmWidthPx);
 
-      // Go down to indexMCP
-      ctx.lineTo(indexMCP.x, indexMCP.y);
-
-      // Along thumb side back to wrist
-      ctx.lineTo(thumbMCP.x, thumbMCP.y);
-      ctx.lineTo(thumbCMC.x, thumbCMC.y);
-      ctx.lineTo(wrist.x, wrist.y);
-
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      return {
+        canvas: { width: canvasW, height: canvasH },
+        pointsPx,
+        palmCenter,
+        observation: {
+          perFinger,
+          globalState,
+          tips,
+          histories: debugState.tipHistory
+        },
+        dead,
+        regime,
+        timeGate,
+        interpreter,
+        scale,
+        plausibility,
+        guidance,
+        reference
+      };
     }
 
     // ============================================
@@ -1751,6 +2024,8 @@
         }
         const debugData = DebugVisionEngine.update(hand, lm, debugCanvas, toPx, performance.now());
         DebugVisionEngine.render(debugCtx, debugCanvas, hand, lm, debugData, toPx);
+        const engineStates = buildEngineStates(hand, lm, fingerZoneData, thumbCrossing);
+        layerManager.renderAll(debugCtx, engineStates);
       } else {
         debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
       }
