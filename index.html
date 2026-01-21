@@ -430,30 +430,8 @@
       </div>
 
       <h3>Test Mode</h3>
-      <select id="modeSelect">
-        <option value="open">Open Hand (all fingers)</option>
-        <option value="scout">Scout Salute (index+middle+ring)</option>
-        <option value="pointer">Pointer (index only)</option>
-        <option value="peace">Peace Sign (index+middle)</option>
-        <option value="pinch_ti">Pinch: Thumb → Index</option>
-        <option value="pinch_tp">Pinch: Thumb → Pinky</option>
-        <option value="thumbs_up">Thumbs Up (thumb only)</option>
-        <option value="middle_finger_lift">Middle Finger Lift (middle only)</option>
-        <option value="ring_finger_lift">Ring Finger Lift (ring only)</option>
-        <option value="pinky_out">Pinky Extension (pinky only)</option>
-        <option value="rock_on">Rock On (index+pinky)</option>
-        <option value="hang_loose">Hang Loose (thumb+pinky)</option>
-        <option value="four_fingers">Four Up (no thumb)</option>
-        <option value="ok_sign">OK Sign (thumb+index)</option>
-        <option value="thumb_to_middle">Thumb to Middle (thumb+middle)</option>
-        <option value="thumb_to_ring">Thumb to Ring (thumb+ring)</option>
-        <option value="thumb_to_pinky">Thumb to Pinky (thumb+pinky)</option>
-        <option value="flat_hand">Flat Hand (all fingers)</option>
-        <option value="fist">Gentle Fist (all down)</option>
-        <option value="starfish">Starfish Spread (all fingers)</option>
-      </select>
       <div class="settings-row">
-        <button class="settings-btn" id="btnSmartTest">Smart Test OFF</button>
+        <div class="settings-btn" style="opacity:0.6;cursor:default">Disabled</div>
       </div>
 
       <h3>Legend</h3>
@@ -500,7 +478,6 @@
       startTime: null,
       frameCount: 0,
       wristRingEnabled: true,
-      smartTestEnabled: false,
     };
 
     // Finger zone tracking
@@ -719,7 +696,31 @@
     // ============================================
     // DRAWING: VIDEO
     // ============================================
+    const AI_VIEW_W = 96;
+    const AI_VIEW_H = 72;
+
+    function drawLowResVideo(image) {
+      if (debugLowCanvas.width !== AI_VIEW_W || debugLowCanvas.height !== AI_VIEW_H) {
+        debugLowCanvas.width = AI_VIEW_W;
+        debugLowCanvas.height = AI_VIEW_H;
+      }
+      debugLowCtx.filter = 'blur(1.5px) contrast(1.05)';
+      debugLowCtx.drawImage(image, 0, 0, AI_VIEW_W, AI_VIEW_H);
+      debugLowCtx.filter = 'none';
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.translate(canvasW, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(debugLowCanvas, -offsetX, offsetY, videoW * scale, videoH * scale);
+      ctx.restore();
+    }
+
     function drawVideo(image) {
+      if (state.debugVisionEnabled) {
+        drawLowResVideo(image);
+        return;
+      }
       ctx.save();
       ctx.translate(canvasW, 0);
       ctx.scale(-1, 1);
@@ -1144,6 +1145,12 @@
     function getExpectedFingerStates(mode) {
       // Returns { fingerName: 'up' | 'down' }
       const ex = getExerciseDefinition(mode);
+      if (state.debugVisionEnabled) {
+        html += `<div class="zone-item" style="font-size:10px;color:var(--text-muted)">
+          <span>AI View: ${AI_VIEW_W}x${AI_VIEW_H} pixel input</span>
+        </div>`;
+      }
+
       if (ex && ex.type === 'isolation') {
         return buildExpectedStatesFromTargets(ex.targetFingers);
       }
@@ -1723,7 +1730,7 @@
       }
 
       // 6b. Check exercise-specific finger states
-      const fingerViolations = state.smartTestEnabled ? getExerciseViolations(lm, state.mode) : null;
+      const fingerViolations = null;
 
       // 7. Draw skeleton with zone colors
       drawSkeleton(lm, fingerZoneData, thumbCrossing);
@@ -1750,15 +1757,13 @@
     }
 
     function renderAIPerception(image) {
-      const targetW = 160;
-      const targetH = 120;
-      if (debugLowCanvas.width !== targetW || debugLowCanvas.height !== targetH) {
-        debugLowCanvas.width = targetW;
-        debugLowCanvas.height = targetH;
+      if (debugLowCanvas.width !== AI_VIEW_W || debugLowCanvas.height !== AI_VIEW_H) {
+        debugLowCanvas.width = AI_VIEW_W;
+        debugLowCanvas.height = AI_VIEW_H;
       }
 
-      debugLowCtx.filter = 'blur(1px) contrast(1.05)';
-      debugLowCtx.drawImage(image, 0, 0, targetW, targetH);
+      debugLowCtx.filter = 'blur(1.5px) contrast(1.05)';
+      debugLowCtx.drawImage(image, 0, 0, AI_VIEW_W, AI_VIEW_H);
       debugLowCtx.filter = 'none';
 
       debugCtx.save();
@@ -1859,15 +1864,6 @@
       }
     };
 
-    document.getElementById('modeSelect').onchange = (e) => {
-      state.mode = e.target.value;
-      updateExerciseMeta(state.mode);
-    };
-    document.getElementById('btnSmartTest').onclick = function() {
-      state.smartTestEnabled = !state.smartTestEnabled;
-      this.textContent = state.smartTestEnabled ? 'Smart Test ON' : 'Smart Test OFF';
-      this.classList.toggle('active', state.smartTestEnabled);
-    };
 
     // Wrist ring toggle (optional, can be removed if UI is too crowded)
     // Uncomment below to add a button, or just keep it auto-enabled
