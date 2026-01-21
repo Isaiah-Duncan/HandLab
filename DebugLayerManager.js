@@ -180,6 +180,7 @@
       this.enabled = true;
       this.presets = new Map();
       this.onChange = null;
+      this._errorLayers = new Set();
     }
 
     addLayer(name, renderFunction, options) {
@@ -221,7 +222,15 @@
     renderAll(ctx, engineStates) {
       if (!this.enabled) return;
       for (const layer of this.layers) {
-        layer.render(ctx, engineStates);
+        try {
+          layer.render(ctx, engineStates);
+        } catch (err) {
+          if (!this._errorLayers.has(layer.name)) {
+            this._errorLayers.add(layer.name);
+            console.error(`[DebugLayerManager] Layer failed: ${layer.name}`, err);
+          }
+          layer.enabled = false;
+        }
       }
     }
 

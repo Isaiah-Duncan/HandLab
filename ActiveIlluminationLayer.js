@@ -11,7 +11,7 @@
 
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.22;
+    ctx.globalAlpha = 0.28;
     ctx.fillStyle = '#ff0033';
     ctx.fillRect(0, 0, band, h);
     ctx.fillStyle = '#00ff66';
@@ -20,10 +20,10 @@
     ctx.fillRect(band * 2, 0, band, h);
 
     const gradient = ctx.createLinearGradient(0, 0, w, 0);
-    gradient.addColorStop(0, 'rgba(255,0,80,0.35)');
-    gradient.addColorStop(0.5, 'rgba(0,255,140,0.25)');
-    gradient.addColorStop(1, 'rgba(60,120,255,0.35)');
-    ctx.globalAlpha = 0.12;
+    gradient.addColorStop(0, 'rgba(255,0,80,0.45)');
+    gradient.addColorStop(0.5, 'rgba(0,255,140,0.3)');
+    gradient.addColorStop(1, 'rgba(60,120,255,0.45)');
+    ctx.globalAlpha = 0.18;
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
