@@ -522,6 +522,8 @@
     const ctx = canvas.getContext('2d');
     const debugCanvas = document.getElementById('debug-canvas');
     const debugCtx = debugCanvas.getContext('2d');
+    const debugLowCanvas = document.createElement('canvas');
+    const debugLowCtx = debugLowCanvas.getContext('2d');
 
     const statusBadge = document.getElementById('statusBadge');
     const statusCircle = document.getElementById('statusCircle');
@@ -1729,8 +1731,12 @@
       // 8. Draw numbered nodes with glow
       drawNodes(lm, fingerZoneData, thumbCrossing);
 
-      // 8b. AI vision debug overlay (raw landmarks + diagnostics)
+      // 8b. AI vision debug overlay (low-res AI view + landmarks)
       if (state.debugVisionEnabled && typeof DebugVisionEngine !== 'undefined') {
+        debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+        if (results.image) {
+          renderAIPerception(results.image);
+        }
         const debugData = DebugVisionEngine.update(hand, lm, debugCanvas, toPx, performance.now());
         DebugVisionEngine.render(debugCtx, debugCanvas, hand, lm, debugData, toPx);
       } else {
@@ -1741,6 +1747,25 @@
       updateZoneReport(fingerZoneData, thumbCrossing, fingerViolations);
       updateStatus(fingerZoneData, thumbCrossing);
       updateTimer();
+    }
+
+    function renderAIPerception(image) {
+      const targetW = 160;
+      const targetH = 120;
+      if (debugLowCanvas.width !== targetW || debugLowCanvas.height !== targetH) {
+        debugLowCanvas.width = targetW;
+        debugLowCanvas.height = targetH;
+      }
+
+      debugLowCtx.filter = 'blur(1px) contrast(1.05)';
+      debugLowCtx.drawImage(image, 0, 0, targetW, targetH);
+      debugLowCtx.filter = 'none';
+
+      debugCtx.save();
+      debugCtx.imageSmoothingEnabled = false;
+      debugCtx.globalAlpha = 0.9;
+      debugCtx.drawImage(debugLowCanvas, 0, 0, debugCanvas.width, debugCanvas.height);
+      debugCtx.restore();
     }
 
     // ============================================
