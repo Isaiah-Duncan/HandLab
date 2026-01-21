@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>HandHero – Dynamic IBE Boundary Visualizer</title>
+  <script src="DebugVisionEngine.js"></script>
   <style>
     /*
      * ============================================
@@ -61,6 +62,19 @@
       height: 100%;
       background: #000;
     }
+    
+    #debug-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 12;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    
+    #debug-canvas.active { opacity: 1; }
 
     /* ============================================
        TOP-LEFT: Instruction Card
@@ -353,6 +367,7 @@
   <div class="app">
     <video id="video" playsinline></video>
     <canvas id="canvas"></canvas>
+    <canvas id="debug-canvas"></canvas>
 
     <!-- TOP-LEFT: Instruction Card -->
     <div class="instruction-card">
@@ -411,6 +426,7 @@
         <button class="settings-btn active" id="btnIBE">🔍 IBE ON</button>
         <button class="settings-btn active" id="btnNodes">🔢 Nodes</button>
         <button class="settings-btn active" id="btnZones">🎨 Zones</button>
+        <button class="settings-btn" id="btnVisionDebug">AI Vision Debug OFF</button>
       </div>
 
       <h3>Test Mode</h3>
@@ -476,6 +492,7 @@
       ibeEnabled: true,
       nodesEnabled: true,
       zonesEnabled: true,
+      debugVisionEnabled: false,
       mode: 'open',
       opacity: 0.30,
       redLineOffset: 80,
@@ -503,6 +520,8 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
+    const debugCanvas = document.getElementById('debug-canvas');
+    const debugCtx = debugCanvas.getContext('2d');
 
     const statusBadge = document.getElementById('statusBadge');
     const statusCircle = document.getElementById('statusCircle');
@@ -561,6 +580,9 @@
       canvasW = rect.width;
       canvasH = rect.height;
       ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      debugCanvas.width = Math.round(rect.width * devicePixelRatio);
+      debugCanvas.height = Math.round(rect.height * devicePixelRatio);
+      debugCtx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     }
 
     function computeVideoMapping() {
@@ -1643,6 +1665,9 @@
         statusBadge.textContent = 'IDLE';
         statusCircle.className = 'status-circle';
         fingerZonesEl.innerHTML = '<span style="color:var(--text-muted)">Show your hand...</span>';
+        if (state.debugVisionEnabled) {
+          debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+        }
         return;
       }
 
@@ -1703,6 +1728,14 @@
 
       // 8. Draw numbered nodes with glow
       drawNodes(lm, fingerZoneData, thumbCrossing);
+
+      // 8b. AI vision debug overlay (raw landmarks + diagnostics)
+      if (state.debugVisionEnabled && typeof DebugVisionEngine !== 'undefined') {
+        const debugData = DebugVisionEngine.update(hand, lm, debugCanvas, toPx, performance.now());
+        DebugVisionEngine.render(debugCtx, debugCanvas, hand, lm, debugData, toPx);
+      } else {
+        debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+      }
 
       // 9. Update UI
       updateZoneReport(fingerZoneData, thumbCrossing, fingerViolations);
@@ -1789,6 +1822,16 @@
       state.zonesEnabled = !state.zonesEnabled;
       this.textContent = state.zonesEnabled ? '🎨 Zones' : '🎨 Zones';
       this.classList.toggle('active', state.zonesEnabled);
+    };
+
+    document.getElementById('btnVisionDebug').onclick = function() {
+      state.debugVisionEnabled = !state.debugVisionEnabled;
+      this.textContent = state.debugVisionEnabled ? 'AI Vision Debug ON' : 'AI Vision Debug OFF';
+      this.classList.toggle('active', state.debugVisionEnabled);
+      debugCanvas.classList.toggle('active', state.debugVisionEnabled);
+      if (!state.debugVisionEnabled) {
+        debugCtx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+      }
     };
 
     document.getElementById('modeSelect').onchange = (e) => {
