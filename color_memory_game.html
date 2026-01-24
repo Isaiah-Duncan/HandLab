@@ -973,10 +973,20 @@
     const COLOR_NAMES = ['red', 'yellow', 'green', 'blue', 'purple'];
 
     const TARGET_CONFIG = {
-      width: 80,
-      height: 50,
+      width: 140,
+      height: 90,
       cornerRadius: 20,
       borderWidth: 3
+    };
+
+    const CAMERA_FRAME_CONFIG = {
+      maxWidthRatio: 0.88,
+      maxHeightRatio: 0.78,
+      minPaddingX: 24,
+      minPaddingY: 90,
+      aspect: 16 / 9,
+      cornerRadius: 28,
+      borderWidth: 2
     };
 
     const CONFIG = {
@@ -1037,6 +1047,14 @@
     let targetState = {
       state: 'waiting',
       shakeOffset: 0
+    };
+
+    let cameraFrame = {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+      radius: CAMERA_FRAME_CONFIG.cornerRadius
     };
 
     // ============================================
@@ -1112,15 +1130,53 @@
     }
 
     function toPx(landmark, width, height) {
+      const frame = cameraFrame.width ? cameraFrame : { x: 0, y: 0, width, height };
       return {
-        x: landmark.x * width,
-        y: landmark.y * height,
+        x: frame.x + landmark.x * frame.width,
+        y: frame.y + landmark.y * frame.height,
         z: landmark.z
       };
     }
 
     function sleep(ms) {
       return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function roundedRectPath(ctx, x, y, width, height, radius) {
+      const safeRadius = Math.min(radius, width / 2, height / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + safeRadius, y);
+      ctx.lineTo(x + width - safeRadius, y);
+      ctx.quadraticCurveTo(x + width, y, x + width, y + safeRadius);
+      ctx.lineTo(x + width, y + height - safeRadius);
+      ctx.quadraticCurveTo(x + width, y + height, x + width - safeRadius, y + height);
+      ctx.lineTo(x + safeRadius, y + height);
+      ctx.quadraticCurveTo(x, y + height, x, y + height - safeRadius);
+      ctx.lineTo(x, y + safeRadius);
+      ctx.quadraticCurveTo(x, y, x + safeRadius, y);
+      ctx.closePath();
+    }
+
+    function updateCameraFrame(width, height) {
+      const paddingX = Math.max(CAMERA_FRAME_CONFIG.minPaddingX, width * (1 - CAMERA_FRAME_CONFIG.maxWidthRatio) / 2);
+      const paddingY = Math.max(CAMERA_FRAME_CONFIG.minPaddingY, height * (1 - CAMERA_FRAME_CONFIG.maxHeightRatio) / 2);
+      const maxWidth = Math.max(0, width - paddingX * 2);
+      const maxHeight = Math.max(0, height - paddingY * 2);
+
+      let frameWidth = maxWidth;
+      let frameHeight = frameWidth / CAMERA_FRAME_CONFIG.aspect;
+      if (frameHeight > maxHeight) {
+        frameHeight = maxHeight;
+        frameWidth = frameHeight * CAMERA_FRAME_CONFIG.aspect;
+      }
+
+      cameraFrame = {
+        x: (width - frameWidth) / 2,
+        y: (height - frameHeight) / 2,
+        width: frameWidth,
+        height: frameHeight,
+        radius: Math.min(CAMERA_FRAME_CONFIG.cornerRadius, frameWidth / 8, frameHeight / 6)
+      };
     }
 
     // ============================================
@@ -1169,8 +1225,12 @@
         let confidence = 1.0;
 
         const edgeMargin = 50;
-        if (tip.x < edgeMargin || tip.x > width - edgeMargin ||
-            tip.y < edgeMargin || tip.y > height - edgeMargin) {
+        const frameLeft = cameraFrame.x;
+        const frameRight = cameraFrame.x + cameraFrame.width;
+        const frameTop = cameraFrame.y;
+        const frameBottom = cameraFrame.y + cameraFrame.height;
+        if (tip.x < frameLeft + edgeMargin || tip.x > frameRight - edgeMargin ||
+            tip.y < frameTop + edgeMargin || tip.y > frameBottom - edgeMargin) {
           confidence *= 0.7;
         }
 
@@ -1489,7 +1549,7 @@
 
     function render(landmarks, width, height) {
       ctx.clearRect(0, 0, width, height);
-      ctx.drawImage(video, 0, 0, width, height);
+      drawCameraFrame();
 
       if (!landmarks) return;
 
@@ -1535,6 +1595,27 @@
 
       // Draw skeleton
       drawSkeleton(landmarks, width, height);
+    }
+
+    function drawCameraFrame() {
+      if (!cameraFrame.width || !cameraFrame.height) return;
+
+      ctx.save();
+      roundedRectPath(ctx, cameraFrame.x, cameraFrame.y, cameraFrame.width, cameraFrame.height, cameraFrame.radius);
+      ctx.fillStyle = 'rgba(13, 13, 26, 0.55)';
+      ctx.fill();
+      ctx.clip();
+      ctx.drawImage(video, cameraFrame.x, cameraFrame.y, cameraFrame.width, cameraFrame.height);
+      ctx.restore();
+
+      ctx.save();
+      roundedRectPath(ctx, cameraFrame.x, cameraFrame.y, cameraFrame.width, cameraFrame.height, cameraFrame.radius);
+      ctx.strokeStyle = 'rgba(138, 43, 226, 0.6)';
+      ctx.lineWidth = CAMERA_FRAME_CONFIG.borderWidth;
+      ctx.shadowBlur = 18;
+      ctx.shadowColor = 'rgba(0, 229, 255, 0.25)';
+      ctx.stroke();
+      ctx.restore();
     }
 
     function drawTargetZone(ctx, palmCenter, scaledWidth, scaledHeight, state) {
@@ -1678,7 +1759,7 @@
         handState.smoothedLandmarks = null;
 
         ctx.clearRect(0, 0, width, height);
-        ctx.drawImage(video, 0, 0, width, height);
+        drawCameraFrame();
       }
 
       updateTrackingStatus();
@@ -1701,6 +1782,7 @@
       canvas.height = window.innerHeight;
       bgCanvas.width = window.innerWidth;
       bgCanvas.height = window.innerHeight;
+      updateCameraFrame(canvas.width, canvas.height);
 
       // Initialize background
       nebula = new NebulaBackground(bgCanvas);
@@ -1755,6 +1837,7 @@
         canvas.height = window.innerHeight;
         bgCanvas.width = window.innerWidth;
         bgCanvas.height = window.innerHeight;
+        updateCameraFrame(canvas.width, canvas.height);
       });
     }
 
