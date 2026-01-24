@@ -1,0 +1,1529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Color Memory Touch - HandHero</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+  <style>
+    :root {
+      --bg: #0a0e14;
+      --card-bg: rgba(255,255,255,0.08);
+      --card-border: rgba(255,255,255,0.12);
+      --red: #ef4444;
+      --yellow: #eab308;
+      --green: #22c55e;
+      --blue: #3b82f6;
+      --purple: #a855f7;
+      --white: #f8fafc;
+      --gray: #64748b;
+      --success-glow: rgba(34, 197, 94, 0.5);
+      --error-glow: rgba(239, 68, 68, 0.5);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--white);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* Canvas container */
+    #canvas-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    #video {
+      display: none;
+    }
+
+    #canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      transform: scaleX(-1);
+    }
+
+    /* UI Overlay */
+    .ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .ui-overlay > * {
+      pointer-events: auto;
+    }
+
+    /* Header bar */
+    .header-bar {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+
+    /* Back button */
+    .back-btn {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      color: var(--white);
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .back-btn:hover {
+      background: rgba(255,255,255,0.12);
+      transform: translateY(-2px);
+    }
+
+    /* Score panel */
+    .score-panel {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px 24px;
+      text-align: center;
+      min-width: 180px;
+    }
+
+    .score-label {
+      font-size: 12px;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .score-value {
+      font-size: 48px;
+      font-weight: 700;
+      background: linear-gradient(135deg, var(--green), var(--blue));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .high-score {
+      font-size: 14px;
+      color: var(--yellow);
+      margin-top: 4px;
+    }
+
+    /* Tracking status */
+    .tracking-status {
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+    }
+
+    .status-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--gray);
+      transition: all 0.3s ease;
+    }
+
+    .status-dot.good {
+      background: var(--green);
+      box-shadow: 0 0 12px var(--success-glow);
+    }
+
+    .status-dot.warning {
+      background: var(--yellow);
+      animation: pulse 1s infinite;
+    }
+
+    .status-dot.error {
+      background: var(--red);
+      animation: pulse 0.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.1); }
+    }
+
+    /* Sequence display */
+    .sequence-display {
+      position: absolute;
+      top: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 12px;
+      padding: 16px 24px;
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      transition: all 0.3s ease;
+    }
+
+    .sequence-dot {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .sequence-dot.active {
+      transform: scale(1.2);
+      box-shadow: 0 0 20px currentColor;
+    }
+
+    .sequence-dot.completed {
+      opacity: 0.4;
+    }
+
+    .sequence-dot.hidden {
+      background: var(--gray) !important;
+      opacity: 0.3;
+    }
+
+    /* Color legend */
+    .color-legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px 20px;
+    }
+
+    .legend-title {
+      font-size: 12px;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .legend-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .legend-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+    }
+
+    /* Game phase indicator */
+    .phase-indicator {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--card-bg);
+      backdrop-filter: blur(20px);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px 32px;
+      text-align: center;
+      font-size: 18px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+
+    .phase-indicator.memorize {
+      border-color: var(--yellow);
+      box-shadow: 0 0 20px rgba(234, 179, 8, 0.3);
+    }
+
+    .phase-indicator.replay {
+      border-color: var(--green);
+      box-shadow: 0 0 20px rgba(34, 197, 94, 0.3);
+    }
+
+    /* Center game area */
+    .game-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+    }
+
+    /* Start/Game Over screens */
+    .game-screen {
+      background: var(--card-bg);
+      backdrop-filter: blur(30px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 40px 60px;
+      text-align: center;
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: scale(0.9); }
+      to { opacity: 1; transform: scale(1); }
+    }
+
+    .game-screen h1 {
+      font-size: 36px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      background: linear-gradient(135deg, var(--red), var(--yellow), var(--green), var(--blue), var(--purple));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .game-screen p {
+      color: var(--gray);
+      font-size: 16px;
+      margin-bottom: 24px;
+      max-width: 400px;
+    }
+
+    .game-btn {
+      background: linear-gradient(135deg, var(--green), var(--blue));
+      border: none;
+      border-radius: 12px;
+      padding: 16px 40px;
+      color: var(--white);
+      font-size: 18px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      margin: 8px;
+    }
+
+    .game-btn:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(34, 197, 94, 0.4);
+    }
+
+    .game-btn.secondary {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+    }
+
+    .game-btn.secondary:hover {
+      background: rgba(255,255,255,0.12);
+      box-shadow: none;
+    }
+
+    /* Tutorial overlay */
+    .tutorial-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.85);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      animation: fadeIn 0.3s ease;
+    }
+
+    .tutorial-content {
+      background: var(--card-bg);
+      backdrop-filter: blur(30px);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      padding: 40px;
+      max-width: 500px;
+      text-align: center;
+    }
+
+    .tutorial-content h2 {
+      font-size: 28px;
+      margin-bottom: 20px;
+    }
+
+    .tutorial-fingers {
+      display: flex;
+      justify-content: center;
+      gap: 16px;
+      margin: 30px 0;
+    }
+
+    .tutorial-finger {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .tutorial-finger .dot {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+    }
+
+    .tutorial-finger .name {
+      font-size: 12px;
+      color: var(--gray);
+    }
+
+    /* Success/Failure feedback */
+    .feedback-flash {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 50;
+      opacity: 0;
+      transition: opacity 0.15s ease;
+    }
+
+    .feedback-flash.success {
+      background: radial-gradient(circle, rgba(34, 197, 94, 0.3) 0%, transparent 70%);
+    }
+
+    .feedback-flash.error {
+      background: radial-gradient(circle, rgba(239, 68, 68, 0.4) 0%, transparent 70%);
+    }
+
+    .feedback-flash.show {
+      opacity: 1;
+    }
+
+    /* Celebration animation */
+    @keyframes celebrate {
+      0% { transform: scale(1); }
+      25% { transform: scale(1.1); }
+      50% { transform: scale(1); }
+      75% { transform: scale(1.05); }
+      100% { transform: scale(1); }
+    }
+
+    .celebrating {
+      animation: celebrate 0.5s ease;
+    }
+
+    /* Game over stats */
+    .game-over-stats {
+      display: flex;
+      justify-content: center;
+      gap: 40px;
+      margin: 24px 0;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 36px;
+      font-weight: 700;
+      color: var(--green);
+    }
+
+    .stat-label {
+      font-size: 12px;
+      color: var(--gray);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .new-high-score {
+      color: var(--yellow);
+      font-size: 20px;
+      font-weight: 600;
+      margin-top: 16px;
+      animation: pulse 1s infinite;
+    }
+
+    /* Warning banner */
+    .warning-banner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(234, 179, 8, 0.2);
+      border: 2px solid var(--yellow);
+      border-radius: 16px;
+      padding: 20px 40px;
+      text-align: center;
+      display: none;
+    }
+
+    .warning-banner.show {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    /* Hidden state */
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <div id="canvas-container">
+    <video id="video" playsinline></video>
+    <canvas id="canvas"></canvas>
+
+    <div class="ui-overlay">
+      <!-- Header -->
+      <div class="header-bar">
+        <button class="back-btn" onclick="goBack()">
+          <span>←</span> Back to Menu
+        </button>
+
+        <div class="score-panel">
+          <div class="score-label">Round</div>
+          <div class="score-value" id="round-display">0</div>
+          <div class="high-score" id="high-score-display">Best: 0</div>
+        </div>
+
+        <div class="tracking-status">
+          <div class="status-dot" id="tracking-dot"></div>
+          <span id="tracking-text">Initializing...</span>
+        </div>
+      </div>
+
+      <!-- Sequence display -->
+      <div class="sequence-display" id="sequence-display"></div>
+
+      <!-- Color legend -->
+      <div class="color-legend" id="color-legend">
+        <div class="legend-title">Finger Colors</div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--red)"></div>
+          <span>Thumb = Red</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--yellow)"></div>
+          <span>Index = Yellow</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--green)"></div>
+          <span>Middle = Green</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--blue)"></div>
+          <span>Ring = Blue</span>
+        </div>
+        <div class="legend-item">
+          <div class="legend-dot" style="background: var(--purple)"></div>
+          <span>Pinky = Purple</span>
+        </div>
+      </div>
+
+      <!-- Phase indicator -->
+      <div class="phase-indicator hidden" id="phase-indicator">Watch the sequence...</div>
+
+      <!-- Game center area for screens -->
+      <div class="game-center" id="game-center">
+        <!-- Start screen -->
+        <div class="game-screen" id="start-screen">
+          <h1>Color Memory Touch</h1>
+          <p>Watch the color sequence, then touch your palm with the matching colored finger. How far can you go?</p>
+          <button class="game-btn" onclick="showTutorial()">How to Play</button>
+          <button class="game-btn" onclick="startGame()">Start Game</button>
+        </div>
+
+        <!-- Game over screen (hidden by default) -->
+        <div class="game-screen hidden" id="game-over-screen">
+          <h1>Game Over!</h1>
+          <div class="game-over-stats">
+            <div class="stat-item">
+              <div class="stat-value" id="final-round">0</div>
+              <div class="stat-label">Rounds</div>
+            </div>
+            <div class="stat-item">
+              <div class="stat-value" id="final-touches">0</div>
+              <div class="stat-label">Correct Touches</div>
+            </div>
+          </div>
+          <div class="new-high-score hidden" id="new-high-score">New High Score!</div>
+          <button class="game-btn" onclick="startGame()">Play Again</button>
+          <button class="game-btn secondary" onclick="goBack()">Back to Menu</button>
+        </div>
+      </div>
+
+      <!-- Warning banner -->
+      <div class="warning-banner" id="warning-banner">
+        <span style="font-size: 24px;">⚠️</span>
+        <div style="margin-top: 8px;">Hand not detected - improve lighting or hand position</div>
+      </div>
+    </div>
+
+    <!-- Tutorial overlay -->
+    <div class="tutorial-overlay hidden" id="tutorial-overlay">
+      <div class="tutorial-content">
+        <h2>How to Play</h2>
+        <p>Each finger is assigned a color. Watch the sequence, then touch your palm center with the correct fingers in order!</p>
+        <div class="tutorial-fingers">
+          <div class="tutorial-finger">
+            <div class="dot" style="background: var(--red)"></div>
+            <div class="name">Thumb</div>
+          </div>
+          <div class="tutorial-finger">
+            <div class="dot" style="background: var(--yellow)"></div>
+            <div class="name">Index</div>
+          </div>
+          <div class="tutorial-finger">
+            <div class="dot" style="background: var(--green)"></div>
+            <div class="name">Middle</div>
+          </div>
+          <div class="tutorial-finger">
+            <div class="dot" style="background: var(--blue)"></div>
+            <div class="name">Ring</div>
+          </div>
+          <div class="tutorial-finger">
+            <div class="dot" style="background: var(--purple)"></div>
+            <div class="name">Pinky</div>
+          </div>
+        </div>
+        <p><strong>Touch Detection:</strong> Bring your fingertip to your palm center and hold for 0.3 seconds.</p>
+        <button class="game-btn" onclick="closeTutorial()">Got it!</button>
+      </div>
+    </div>
+
+    <!-- Feedback flash -->
+    <div class="feedback-flash" id="feedback-flash"></div>
+  </div>
+
+  <script>
+    // ============================================
+    // CONSTANTS & CONFIGURATION
+    // ============================================
+
+    const COLORS = {
+      thumb: { name: 'red', hex: '#ef4444', rgb: [239, 68, 68] },
+      index: { name: 'yellow', hex: '#eab308', rgb: [234, 179, 8] },
+      middle: { name: 'green', hex: '#22c55e', rgb: [34, 197, 94] },
+      ring: { name: 'blue', hex: '#3b82f6', rgb: [59, 130, 246] },
+      pinky: { name: 'purple', hex: '#a855f7', rgb: [168, 85, 247] }
+    };
+
+    const FINGER_TIPS = {
+      thumb: 4,
+      index: 8,
+      middle: 12,
+      ring: 16,
+      pinky: 20
+    };
+
+    const FINGER_NAMES = ['thumb', 'index', 'middle', 'ring', 'pinky'];
+    const COLOR_NAMES = ['red', 'yellow', 'green', 'blue', 'purple'];
+
+    const CONFIG = {
+      touchRadius: 55,           // Base radius for touch detection
+      touchHoldTime: 300,        // ms to hold for valid touch
+      sequenceShowTime: 800,     // ms to show each color
+      memorizePause: 500,        // ms pause after showing sequence
+      minConfidence: 0.6,        // Minimum tracking confidence
+      smoothFactor: 0.5,         // Landmark smoothing
+      scaleBaseWidth: 150        // Reference palm width for scaling
+    };
+
+    const GAME_STATES = {
+      IDLE: 'idle',
+      TUTORIAL: 'tutorial',
+      SHOW_SEQUENCE: 'showing',
+      MEMORIZE: 'memorizing',
+      REPLAY: 'replay',
+      SUCCESS: 'success',
+      GAME_OVER: 'game_over'
+    };
+
+    // ============================================
+    // GAME STATE
+    // ============================================
+
+    let gameState = {
+      phase: GAME_STATES.IDLE,
+      currentSequence: [],
+      userInput: [],
+      sequenceIndex: 0,
+      round: 0,
+      highScore: parseInt(localStorage.getItem('colorMemoryHighScore') || '0'),
+      totalTouches: 0,
+      isNewHighScore: false
+    };
+
+    // ============================================
+    // HAND TRACKING STATE
+    // ============================================
+
+    let handState = {
+      detected: false,
+      landmarks: null,
+      smoothedLandmarks: null,
+      palmCenter: null,
+      palmWidth: 0,
+      scaleFactor: 1,
+      fingerStates: {},
+      observability: 'unobservable',
+      confidence: 0
+    };
+
+    // Touch detection state
+    let touchState = {
+      activeFinger: null,
+      touchStartTime: null,
+      inTouchZone: false,
+      lastTouchTime: 0,
+      cooldown: false
+    };
+
+    // ============================================
+    // DOM ELEMENTS
+    // ============================================
+
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const startScreen = document.getElementById('start-screen');
+    const gameOverScreen = document.getElementById('game-over-screen');
+    const tutorialOverlay = document.getElementById('tutorial-overlay');
+    const sequenceDisplay = document.getElementById('sequence-display');
+    const phaseIndicator = document.getElementById('phase-indicator');
+    const feedbackFlash = document.getElementById('feedback-flash');
+    const warningBanner = document.getElementById('warning-banner');
+    const trackingDot = document.getElementById('tracking-dot');
+    const trackingText = document.getElementById('tracking-text');
+    const roundDisplay = document.getElementById('round-display');
+    const highScoreDisplay = document.getElementById('high-score-display');
+    const colorLegend = document.getElementById('color-legend');
+
+    // ============================================
+    // AUDIO (Simple beeps using Web Audio API)
+    // ============================================
+
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playTone(frequency, duration, type = 'sine', volume = 0.3) {
+      const oscillator = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+
+      oscillator.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+
+      oscillator.frequency.value = frequency;
+      oscillator.type = type;
+      gainNode.gain.value = volume;
+
+      oscillator.start();
+      gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration / 1000);
+      oscillator.stop(audioCtx.currentTime + duration / 1000);
+    }
+
+    function playSuccess() {
+      playTone(523, 100); // C5
+      setTimeout(() => playTone(659, 100), 100); // E5
+      setTimeout(() => playTone(784, 150), 200); // G5
+    }
+
+    function playError() {
+      playTone(200, 300, 'sawtooth', 0.2);
+    }
+
+    function playSequenceTone(colorIndex) {
+      const frequencies = [262, 330, 392, 523, 659]; // C4, E4, G4, C5, E5
+      playTone(frequencies[colorIndex], 200, 'triangle', 0.4);
+    }
+
+    function playTouch() {
+      playTone(880, 80, 'sine', 0.2);
+    }
+
+    // ============================================
+    // UTILITY FUNCTIONS
+    // ============================================
+
+    function dist(a, b) {
+      return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
+    }
+
+    function lerp(a, b, t) {
+      return a + (b - a) * t;
+    }
+
+    function toPx(landmark, width, height) {
+      return {
+        x: landmark.x * width,
+        y: landmark.y * height,
+        z: landmark.z
+      };
+    }
+
+    // ============================================
+    // SCALE NORMALIZATION ENGINE
+    // ============================================
+
+    function updateScaleNormalization(landmarks, width, height) {
+      if (!landmarks) return;
+
+      const wrist = toPx(landmarks[0], width, height);
+      const indexMCP = toPx(landmarks[5], width, height);
+      const pinkyMCP = toPx(landmarks[17], width, height);
+
+      // Calculate palm width
+      handState.palmWidth = dist(indexMCP, pinkyMCP);
+
+      // Scale factor relative to reference
+      handState.scaleFactor = handState.palmWidth / CONFIG.scaleBaseWidth;
+
+      // Clamp scale factor to reasonable range
+      handState.scaleFactor = Math.max(0.5, Math.min(2.0, handState.scaleFactor));
+    }
+
+    // ============================================
+    // PALM CENTER DETECTION
+    // ============================================
+
+    function calculatePalmCenter(landmarks, width, height) {
+      if (!landmarks) return null;
+
+      // Use palm triangle: wrist(0), index MCP(5), pinky MCP(17)
+      const wrist = toPx(landmarks[0], width, height);
+      const indexMCP = toPx(landmarks[5], width, height);
+      const pinkyMCP = toPx(landmarks[17], width, height);
+      const middleMCP = toPx(landmarks[9], width, height);
+
+      // Calculate centroid of palm area
+      return {
+        x: (wrist.x + indexMCP.x + pinkyMCP.x + middleMCP.x) / 4,
+        y: (wrist.y + indexMCP.y + pinkyMCP.y + middleMCP.y) / 4
+      };
+    }
+
+    // ============================================
+    // OBSERVATION THRESHOLDS ENGINE
+    // ============================================
+
+    function updateObservationThresholds(landmarks, width, height) {
+      if (!landmarks) {
+        handState.observability = 'unobservable';
+        handState.fingerStates = {};
+        return;
+      }
+
+      const fingerStates = {};
+      let totalConfidence = 0;
+
+      for (const [name, tipIndex] of Object.entries(FINGER_TIPS)) {
+        const tip = toPx(landmarks[tipIndex], width, height);
+        const mcp = toPx(landmarks[tipIndex - 3], width, height);
+
+        // Calculate finger visibility based on position and Z depth
+        let confidence = 1.0;
+
+        // Penalize if finger is very close to edge
+        const edgeMargin = 50;
+        if (tip.x < edgeMargin || tip.x > width - edgeMargin ||
+            tip.y < edgeMargin || tip.y > height - edgeMargin) {
+          confidence *= 0.7;
+        }
+
+        // Penalize based on Z depth (further back = less visible)
+        if (tip.z > 0.1) confidence *= 0.8;
+
+        // Calculate extension ratio
+        const extensionDist = dist(tip, mcp);
+        const palmScale = handState.palmWidth || 100;
+        const extensionRatio = extensionDist / palmScale;
+
+        fingerStates[name] = {
+          confidence,
+          extended: extensionRatio > 0.5,
+          position: tip,
+          state: confidence > 0.7 ? 'observed' : confidence > 0.4 ? 'less' : 'unobservable'
+        };
+
+        totalConfidence += confidence;
+      }
+
+      handState.fingerStates = fingerStates;
+      handState.confidence = totalConfidence / 5;
+      handState.observability = handState.confidence > 0.7 ? 'observed' :
+                                handState.confidence > 0.4 ? 'less' : 'unobservable';
+    }
+
+    // ============================================
+    // FINGER EXTENSION DETECTION
+    // ============================================
+
+    function isFingerExtended(landmarks, fingerName, width, height) {
+      const tipIndex = FINGER_TIPS[fingerName];
+      const pipIndex = tipIndex - 2;
+      const mcpIndex = tipIndex - 3;
+
+      const tip = toPx(landmarks[tipIndex], width, height);
+      const pip = toPx(landmarks[pipIndex], width, height);
+      const mcp = toPx(landmarks[mcpIndex], width, height);
+
+      // Calculate vectors
+      const tipToPip = dist(tip, pip);
+      const pipToMcp = dist(pip, mcp);
+      const tipToMcp = dist(tip, mcp);
+
+      // Extended finger has tip far from MCP
+      const extensionRatio = tipToMcp / (handState.palmWidth || 100);
+
+      // Also check if finger is relatively straight
+      const straightness = tipToMcp / (tipToPip + pipToMcp);
+
+      return extensionRatio > 0.6 && straightness > 0.85;
+    }
+
+    // ============================================
+    // TOUCH DETECTION (RADIUS TOLERANCE ENGINE)
+    // ============================================
+
+    function detectTouch(landmarks, width, height) {
+      if (!landmarks || !handState.palmCenter) return null;
+
+      const scaledRadius = CONFIG.touchRadius * handState.scaleFactor;
+      const palmCenter = handState.palmCenter;
+
+      // Check each fingertip
+      for (const [name, tipIndex] of Object.entries(FINGER_TIPS)) {
+        const fingerState = handState.fingerStates[name];
+
+        // Skip unobservable fingers
+        if (!fingerState || fingerState.state === 'unobservable') continue;
+
+        const tip = toPx(landmarks[tipIndex], width, height);
+        const distance = dist(tip, palmCenter);
+
+        if (distance < scaledRadius) {
+          // Finger is in touch zone
+          // Check if this finger is the most extended one (to avoid false touches)
+          const isExtended = !isFingerExtended(landmarks, name, width, height);
+
+          if (isExtended || name === 'thumb') {
+            return {
+              finger: name,
+              distance,
+              position: tip
+            };
+          }
+        }
+      }
+
+      return null;
+    }
+
+    function processTouchInput(touchData, now) {
+      if (touchState.cooldown) return;
+
+      if (touchData) {
+        if (touchState.activeFinger === touchData.finger) {
+          // Same finger still in zone
+          const holdTime = now - touchState.touchStartTime;
+
+          if (holdTime >= CONFIG.touchHoldTime && !touchState.registered) {
+            // Valid touch!
+            touchState.registered = true;
+            handleValidTouch(touchData.finger);
+          }
+        } else {
+          // New finger entered zone
+          touchState.activeFinger = touchData.finger;
+          touchState.touchStartTime = now;
+          touchState.registered = false;
+          touchState.inTouchZone = true;
+        }
+      } else {
+        // No touch
+        if (touchState.inTouchZone) {
+          touchState.inTouchZone = false;
+          touchState.activeFinger = null;
+          touchState.registered = false;
+        }
+      }
+    }
+
+    function handleValidTouch(finger) {
+      if (gameState.phase !== GAME_STATES.REPLAY) return;
+
+      const expectedColor = gameState.currentSequence[gameState.sequenceIndex];
+      const fingerColor = COLORS[finger].name;
+
+      playTouch();
+
+      if (fingerColor === expectedColor) {
+        // Correct!
+        showFeedback('success');
+        gameState.userInput.push(fingerColor);
+        gameState.sequenceIndex++;
+        gameState.totalTouches++;
+
+        // Update sequence display
+        updateSequenceDisplay();
+
+        // Check if sequence complete
+        if (gameState.sequenceIndex >= gameState.currentSequence.length) {
+          // Round complete!
+          setTimeout(() => roundSuccess(), 500);
+        }
+
+        // Cooldown to prevent double-touches
+        touchState.cooldown = true;
+        setTimeout(() => { touchState.cooldown = false; }, 400);
+
+      } else {
+        // Wrong finger!
+        showFeedback('error');
+        playError();
+        setTimeout(() => gameOver(), 800);
+      }
+    }
+
+    // ============================================
+    // GAME FLOW FUNCTIONS
+    // ============================================
+
+    function startGame() {
+      // Reset game state
+      gameState = {
+        phase: GAME_STATES.SHOW_SEQUENCE,
+        currentSequence: [],
+        userInput: [],
+        sequenceIndex: 0,
+        round: 0,
+        highScore: parseInt(localStorage.getItem('colorMemoryHighScore') || '0'),
+        totalTouches: 0,
+        isNewHighScore: false
+      };
+
+      // Hide screens
+      startScreen.classList.add('hidden');
+      gameOverScreen.classList.add('hidden');
+      colorLegend.classList.remove('hidden');
+
+      // Update UI
+      updateRoundDisplay();
+      highScoreDisplay.textContent = `Best: ${gameState.highScore}`;
+
+      // Start first round
+      nextRound();
+    }
+
+    function nextRound() {
+      gameState.round++;
+      gameState.userInput = [];
+      gameState.sequenceIndex = 0;
+
+      // Generate new sequence (add one more color each round)
+      if (gameState.round === 1) {
+        gameState.currentSequence = [randomColor()];
+      } else {
+        gameState.currentSequence.push(randomColor());
+      }
+
+      updateRoundDisplay();
+
+      // Show the sequence
+      showSequence();
+    }
+
+    function randomColor() {
+      return COLOR_NAMES[Math.floor(Math.random() * COLOR_NAMES.length)];
+    }
+
+    async function showSequence() {
+      gameState.phase = GAME_STATES.SHOW_SEQUENCE;
+      phaseIndicator.textContent = 'Watch the sequence...';
+      phaseIndicator.className = 'phase-indicator memorize';
+      phaseIndicator.classList.remove('hidden');
+
+      // Build sequence display
+      buildSequenceDisplay(true);
+
+      // Show each color one by one
+      for (let i = 0; i < gameState.currentSequence.length; i++) {
+        await sleep(300);
+        highlightSequenceItem(i);
+        playSequenceTone(COLOR_NAMES.indexOf(gameState.currentSequence[i]));
+        await sleep(CONFIG.sequenceShowTime);
+        unhighlightSequenceItem(i);
+      }
+
+      // Memorize pause
+      await sleep(CONFIG.memorizePause);
+
+      // Hide colors and start replay
+      startReplay();
+    }
+
+    function startReplay() {
+      gameState.phase = GAME_STATES.REPLAY;
+      gameState.sequenceIndex = 0;
+
+      phaseIndicator.textContent = 'Your turn! Touch palm with correct finger';
+      phaseIndicator.className = 'phase-indicator replay';
+
+      // Hide the sequence colors (show as gray)
+      buildSequenceDisplay(false);
+
+      // Reset touch state
+      touchState = {
+        activeFinger: null,
+        touchStartTime: null,
+        inTouchZone: false,
+        lastTouchTime: 0,
+        cooldown: false,
+        registered: false
+      };
+    }
+
+    function roundSuccess() {
+      gameState.phase = GAME_STATES.SUCCESS;
+      playSuccess();
+
+      phaseIndicator.textContent = 'Perfect! Get ready...';
+      phaseIndicator.className = 'phase-indicator';
+
+      // Check for high score
+      if (gameState.round > gameState.highScore) {
+        gameState.highScore = gameState.round;
+        gameState.isNewHighScore = true;
+        localStorage.setItem('colorMemoryHighScore', gameState.highScore.toString());
+        highScoreDisplay.textContent = `Best: ${gameState.highScore}`;
+      }
+
+      // Celebration animation
+      document.querySelector('.score-panel').classList.add('celebrating');
+      setTimeout(() => {
+        document.querySelector('.score-panel').classList.remove('celebrating');
+      }, 500);
+
+      // Next round after delay
+      setTimeout(() => nextRound(), 1500);
+    }
+
+    function gameOver() {
+      gameState.phase = GAME_STATES.GAME_OVER;
+
+      phaseIndicator.classList.add('hidden');
+      sequenceDisplay.innerHTML = '';
+
+      // Update game over screen
+      document.getElementById('final-round').textContent = gameState.round;
+      document.getElementById('final-touches').textContent = gameState.totalTouches;
+
+      const newHighScoreEl = document.getElementById('new-high-score');
+      if (gameState.isNewHighScore) {
+        newHighScoreEl.classList.remove('hidden');
+      } else {
+        newHighScoreEl.classList.add('hidden');
+      }
+
+      // Show game over screen
+      gameOverScreen.classList.remove('hidden');
+    }
+
+    // ============================================
+    // UI UPDATE FUNCTIONS
+    // ============================================
+
+    function buildSequenceDisplay(showColors) {
+      sequenceDisplay.innerHTML = '';
+
+      for (let i = 0; i < gameState.currentSequence.length; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'sequence-dot';
+        dot.id = `seq-dot-${i}`;
+
+        if (showColors) {
+          dot.style.background = getColorHex(gameState.currentSequence[i]);
+        } else {
+          dot.classList.add('hidden');
+          dot.style.background = '#64748b';
+        }
+
+        sequenceDisplay.appendChild(dot);
+      }
+    }
+
+    function highlightSequenceItem(index) {
+      const dot = document.getElementById(`seq-dot-${index}`);
+      if (dot) {
+        dot.classList.add('active');
+        dot.style.boxShadow = `0 0 30px ${getColorHex(gameState.currentSequence[index])}`;
+      }
+    }
+
+    function unhighlightSequenceItem(index) {
+      const dot = document.getElementById(`seq-dot-${index}`);
+      if (dot) {
+        dot.classList.remove('active');
+        dot.style.boxShadow = 'none';
+      }
+    }
+
+    function updateSequenceDisplay() {
+      // Mark completed items
+      for (let i = 0; i < gameState.sequenceIndex; i++) {
+        const dot = document.getElementById(`seq-dot-${i}`);
+        if (dot) {
+          dot.classList.add('completed');
+          dot.classList.remove('hidden');
+          dot.style.background = getColorHex(gameState.currentSequence[i]);
+        }
+      }
+    }
+
+    function updateRoundDisplay() {
+      roundDisplay.textContent = gameState.round;
+    }
+
+    function updateTrackingStatus() {
+      if (!handState.detected) {
+        trackingDot.className = 'status-dot error';
+        trackingText.textContent = 'No hand detected';
+        warningBanner.classList.add('show');
+      } else if (handState.observability === 'unobservable') {
+        trackingDot.className = 'status-dot error';
+        trackingText.textContent = 'Poor tracking';
+        warningBanner.classList.add('show');
+      } else if (handState.observability === 'less') {
+        trackingDot.className = 'status-dot warning';
+        trackingText.textContent = 'Tracking (improve lighting)';
+        warningBanner.classList.remove('show');
+      } else {
+        trackingDot.className = 'status-dot good';
+        trackingText.textContent = 'Tracking good';
+        warningBanner.classList.remove('show');
+      }
+    }
+
+    function showFeedback(type) {
+      feedbackFlash.className = `feedback-flash ${type} show`;
+      setTimeout(() => {
+        feedbackFlash.classList.remove('show');
+      }, 200);
+    }
+
+    function getColorHex(colorName) {
+      for (const color of Object.values(COLORS)) {
+        if (color.name === colorName) return color.hex;
+      }
+      return '#ffffff';
+    }
+
+    // ============================================
+    // RENDERING
+    // ============================================
+
+    function render(landmarks, width, height) {
+      ctx.clearRect(0, 0, width, height);
+
+      // Draw video frame
+      ctx.save();
+      ctx.drawImage(video, 0, 0, width, height);
+      ctx.restore();
+
+      if (!landmarks) return;
+
+      const palmCenter = handState.palmCenter;
+      const scaledRadius = CONFIG.touchRadius * handState.scaleFactor;
+
+      // Draw palm target zone
+      if (palmCenter && gameState.phase === GAME_STATES.REPLAY) {
+        // Target glow
+        const gradient = ctx.createRadialGradient(
+          palmCenter.x, palmCenter.y, 0,
+          palmCenter.x, palmCenter.y, scaledRadius * 1.5
+        );
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 0.15)');
+        gradient.addColorStop(0.7, 'rgba(255, 255, 255, 0.05)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(palmCenter.x, palmCenter.y, scaledRadius * 1.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Target circle
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = 3;
+        ctx.setLineDash([10, 5]);
+        ctx.beginPath();
+        ctx.arc(palmCenter.x, palmCenter.y, scaledRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Crosshair
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(palmCenter.x - 15, palmCenter.y);
+        ctx.lineTo(palmCenter.x + 15, palmCenter.y);
+        ctx.moveTo(palmCenter.x, palmCenter.y - 15);
+        ctx.lineTo(palmCenter.x, palmCenter.y + 15);
+        ctx.stroke();
+      }
+
+      // Draw finger indicators with colors
+      for (const [name, tipIndex] of Object.entries(FINGER_TIPS)) {
+        const tip = toPx(landmarks[tipIndex], width, height);
+        const color = COLORS[name];
+        const fingerState = handState.fingerStates[name];
+
+        // Finger color dot
+        ctx.fillStyle = color.hex;
+        ctx.beginPath();
+        ctx.arc(tip.x, tip.y, 12, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Glow effect for active finger
+        if (touchState.activeFinger === name && touchState.inTouchZone) {
+          ctx.strokeStyle = color.hex;
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(tip.x, tip.y, 20, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Progress ring
+          if (touchState.touchStartTime) {
+            const progress = Math.min(1, (Date.now() - touchState.touchStartTime) / CONFIG.touchHoldTime);
+            ctx.strokeStyle = '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(tip.x, tip.y, 25, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+            ctx.stroke();
+          }
+        }
+
+        // Observability indicator
+        if (fingerState && fingerState.state !== 'observed') {
+          ctx.fillStyle = 'rgba(255, 200, 0, 0.7)';
+          ctx.beginPath();
+          ctx.arc(tip.x + 15, tip.y - 15, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Draw hand skeleton (subtle)
+      drawSkeleton(landmarks, width, height);
+    }
+
+    function drawSkeleton(landmarks, width, height) {
+      const connections = [
+        [0, 1], [1, 2], [2, 3], [3, 4],     // Thumb
+        [0, 5], [5, 6], [6, 7], [7, 8],     // Index
+        [0, 9], [9, 10], [10, 11], [11, 12], // Middle
+        [0, 13], [13, 14], [14, 15], [15, 16], // Ring
+        [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
+        [5, 9], [9, 13], [13, 17]           // Palm
+      ];
+
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+      ctx.lineWidth = 2;
+
+      for (const [i, j] of connections) {
+        const a = toPx(landmarks[i], width, height);
+        const b = toPx(landmarks[j], width, height);
+
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+    }
+
+    // ============================================
+    // LANDMARK SMOOTHING
+    // ============================================
+
+    function smoothLandmarks(newLandmarks) {
+      if (!handState.smoothedLandmarks) {
+        handState.smoothedLandmarks = JSON.parse(JSON.stringify(newLandmarks));
+        return handState.smoothedLandmarks;
+      }
+
+      for (let i = 0; i < newLandmarks.length; i++) {
+        handState.smoothedLandmarks[i].x = lerp(
+          handState.smoothedLandmarks[i].x,
+          newLandmarks[i].x,
+          CONFIG.smoothFactor
+        );
+        handState.smoothedLandmarks[i].y = lerp(
+          handState.smoothedLandmarks[i].y,
+          newLandmarks[i].y,
+          CONFIG.smoothFactor
+        );
+        handState.smoothedLandmarks[i].z = lerp(
+          handState.smoothedLandmarks[i].z,
+          newLandmarks[i].z,
+          CONFIG.smoothFactor
+        );
+      }
+
+      return handState.smoothedLandmarks;
+    }
+
+    // ============================================
+    // MEDIAPIPE INTEGRATION
+    // ============================================
+
+    function onResults(results) {
+      const width = canvas.width;
+      const height = canvas.height;
+
+      if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const rawLandmarks = results.multiHandLandmarks[0];
+        const landmarks = smoothLandmarks(rawLandmarks);
+
+        handState.detected = true;
+        handState.landmarks = landmarks;
+
+        // Update engines
+        updateScaleNormalization(landmarks, width, height);
+        handState.palmCenter = calculatePalmCenter(landmarks, width, height);
+        updateObservationThresholds(landmarks, width, height);
+
+        // Touch detection (only during replay phase)
+        if (gameState.phase === GAME_STATES.REPLAY) {
+          const touchData = detectTouch(landmarks, width, height);
+          processTouchInput(touchData, Date.now());
+        }
+
+        // Render
+        render(landmarks, width, height);
+
+      } else {
+        handState.detected = false;
+        handState.landmarks = null;
+        handState.smoothedLandmarks = null;
+
+        // Just draw video
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(video, 0, 0, width, height);
+      }
+
+      // Update tracking status UI
+      updateTrackingStatus();
+    }
+
+    // ============================================
+    // INITIALIZATION
+    // ============================================
+
+    async function init() {
+      // Set canvas size
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+
+      // Initialize MediaPipe Hands
+      const hands = new Hands({
+        locateFile: (file) => {
+          return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+        }
+      });
+
+      hands.setOptions({
+        maxNumHands: 1,
+        modelComplexity: 1,
+        minDetectionConfidence: CONFIG.minConfidence,
+        minTrackingConfidence: CONFIG.minConfidence
+      });
+
+      hands.onResults(onResults);
+
+      // Set up camera
+      const camera = new Camera(video, {
+        onFrame: async () => {
+          await hands.send({ image: video });
+        },
+        width: 1280,
+        height: 720
+      });
+
+      await camera.start();
+
+      // Update high score display
+      highScoreDisplay.textContent = `Best: ${gameState.highScore}`;
+
+      // Handle window resize
+      window.addEventListener('resize', () => {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      });
+    }
+
+    // ============================================
+    // NAVIGATION & TUTORIAL
+    // ============================================
+
+    function goBack() {
+      window.location.href = 'index.html';
+    }
+
+    function showTutorial() {
+      tutorialOverlay.classList.remove('hidden');
+    }
+
+    function closeTutorial() {
+      tutorialOverlay.classList.add('hidden');
+    }
+
+    // ============================================
+    // UTILITY
+    // ============================================
+
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    // ============================================
+    // START
+    // ============================================
+
+    init().catch(console.error);
+  </script>
+</body>
+</html>
